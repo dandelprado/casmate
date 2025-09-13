@@ -4,7 +4,7 @@ import random
 
 st.title("CASmate - CAS Chatbot")
 
-name = st.text.input("What's your name?")
+name = st.text_input("What's your name?")
 
 if name:
     st.write(f"Hello, {name}! Welcome to the College of Arts and Sciences.")
