@@ -17,6 +17,7 @@ if "user_name" not in st.session_state:
 if "awaiting_question" not in st.session_state:
     st.session_state.awaiting_question = False
 
+
 def time_greeting():
     h = datetime.now().hour
     if 5 <= h < 12:
@@ -24,6 +25,7 @@ def time_greeting():
     if 12 <= h < 18:
         return "Good afternoon"
     return "Hello"
+
 
 if not st.session_state.asked_name:
     st.session_state.chat.append(("CASmate", f"{time_greeting()}! What's your name?"))
@@ -38,6 +40,7 @@ for sender, msg in st.session_state.chat:
                                      display_label=label),
                 unsafe_allow_html=True)
 
+
 def submit_name():
     name = st.session_state.get("name_input", "").strip()
     if not name:
@@ -45,7 +48,6 @@ def submit_name():
     st.session_state.user_name = name
     st.session_state.chat.append(("Student", name))
     st.session_state.chat.append(("CASmate", f"Hi, {name}."))
-    # Trivia
     fact = "Here's a fun fact for you!"
     try:
         r = requests.get("https://uselessfacts.jsph.pl/random.json?language=en", timeout=4)
@@ -58,6 +60,7 @@ def submit_name():
     st.session_state.awaiting_question = True
     st.session_state.name_input = "" 
 
+
 def submit_question():
     q = st.session_state.get("question_input", "").strip()
     if not q:
@@ -65,6 +68,7 @@ def submit_question():
     st.session_state.chat.append(("Student", q))
     st.session_state.chat.append(("CASmate", "CASmate is currently in development. Please wait for the next update."))
     st.session_state.question_input = ""  
+
 
 if not st.session_state.user_name:
     st.text_input("You:", key="name_input", on_change=submit_name)

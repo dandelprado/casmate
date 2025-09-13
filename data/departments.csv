@@ -1,0 +1,7 @@
+department_id,department_name,department_head,dean_flag
+D-CAS,CAS Dean,<TBD>,Y
+D-SS,Social Sciences,<TBD>,N
+D-CS,Computer Science,<TBD>,N
+D-LL,Language and Literature,<TBD>,N
+D-NS,Natural Sciences,<TBD>,N
+D-MATH,Mathematics,<TBD>,N
