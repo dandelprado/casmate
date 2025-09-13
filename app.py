@@ -6,7 +6,6 @@ from chat_ui import get_chat_bubble_html, get_footer_html
 st.set_page_config(page_title="CASmate Chat", layout="centered")
 st.title("🎓 CASmate - Northwestern University of Laoag CAS Chatbot")
 
-# Initialize session state
 if "chat" not in st.session_state:
     st.session_state.chat = []
 if "asked_name" not in st.session_state:
@@ -38,7 +37,9 @@ if not st.session_state.got_name:
     if name:
         st.session_state.chat.append(("Student", name))
         st.session_state.got_name = True
+
         st.session_state.chat.append(("CASmate", f"Hi, {name}."))
+
         try:
             response = requests.get("https://uselessfacts.jsph.pl/random.json?language=en", timeout=3)
             if response.status_code == 200:
@@ -47,6 +48,7 @@ if not st.session_state.got_name:
                 fact = "Here's a fun fact for you!"
         except Exception:
             fact = "Here's a fun fact for you!"
+
         st.session_state.chat.append(("CASmate", f"Did you know? _{fact}_"))
         st.session_state.chat.append(("CASmate", "How can I assist you today?"))
 
