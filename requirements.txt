@@ -1,2 +1,5 @@
 streamlit>=1.37
 requests
+rapidfuzz
+spacy>=3.7,<4
+spacy-lookups-data>=1.0
