@@ -83,41 +83,59 @@ def parse_year_sem(text: str):
     return year, sem
 
 
+def _resolve_program_row(programs, detected_name: str):
+    if not detected_name:
+        return None
+    dn = detected_name.strip().lower()
+
+    row = next((p for p in programs if p["program_name"].strip().lower() == dn), None)
+    if row:
+        return row
+
+    row = next((p for p in programs if p["program_name"].strip().lower().endswith(dn)), None)
+    if row:
+        return row
+
+    row = next((p for p in programs if f" {dn} " in f" {p['program_name'].strip().lower()} "), None)
+    if row:
+        return row
+    return None
+
+
 def handle_plan_query(q: str):
-    best = fuzzy_best_program(programs, q, score_cutoff=0)
-    if best:
-        prog_name, score, prog_row = best
+    ents = extract_entities(q)
+    prog_name = ents.get("program")
+    prog_row = _resolve_program_row(programs, prog_name) if prog_name else None
 
-        if score < 60:
-            top = fuzzy_top_programs(programs, q, limit=3, score_cutoff=60)
-            if top:
-                st.session_state.clarify = {"type": "program", "options": top}
-                return "Did you mean one of these programs? " + "; ".join(top), ""
+    if not prog_row:
+        best = fuzzy_best_program(programs, q, score_cutoff=75 if len((q or '').strip()) < 6 else 65)
+        if best:
+            prog_name, _score, prog_row = best
 
-        year, sem = parse_year_sem(q)
+    if not prog_row:
+        return "Please mention a valid program (e.g., Psychology, Computer Science).", ""
 
-        if year and not sem:
-            sem = 1
+    year, sem = parse_year_sem(q)
+    if year and not sem:
+        sem = 1
+    if not year:
+        return "Please include a year level (e.g., first year, 2nd year).", source_for_program(prog_row)
+    if not sem:
+        return "Please include a semester or trimester (e.g., first semester, 2nd sem).", source_for_program(prog_row)
 
-        if not year:
-            return "Please include a year level (e.g., first year, 2nd year).", source_for_program(prog_row)
-        if not sem:
-            return "Please include a semester or trimester (e.g., first semester, 2nd sem).", source_for_program(prog_row)
+    rows = courses_for_plan(plan, courses, prog_row["program_id"], year, sem)
+    if not rows:
+        return f"No plan entries found for {prog_row['program_name']} year {year} semester {sem}.", source_for_program(prog_row)
 
-        rows = courses_for_plan(plan, courses, prog_row["program_id"], year, sem)
-        if not rows:
-            return f"No plan entries found for {prog_name} year {year} semester {sem}.", source_for_program(prog_row)
-
-        ord_map = {1: '1st', 2: '2nd', 3: '3rd', 4: '4th'}
-        year_str = ord_map.get(year, f"{year}th")
-        sem_str = f"{sem}st" if sem == 1 else f"{sem}nd" if sem == 2 else f"{sem}th"
-
-        items = [f"{r['course_code'] or r['course_id']} {r['course_title']} ({r['units']} units)" for r in rows]
-
-        return (f"These are the courses you will be taking as a {year_str} year {prog_name} student "
-                f"during the {sem_str} semester: {', '.join(items)}."), source_for_program(prog_row)
-
-    return "Please mention a program (e.g., Psychology, Computer Science).", ""
+    ord_map = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
+    year_str = ord_map.get(year, f"{year}th")
+    sem_str = "1st" if sem == 1 else "2nd" if sem == 2 else f"{sem}th"
+    items = [f"{r.get('course_code') or r['course_id']} {r['course_title']} ({r['units']} units)" for r in rows]
+    msg = (
+        f"These are the courses you will be taking as a {year_str} year {prog_row['program_name']} student "
+        f"during the {sem_str} semester: {', '.join(items)}."
+    )
+    return msg, source_for_program(prog_row)
 
 
 def handle_faculty_query(q: str):
@@ -145,6 +163,7 @@ def handle_faculty_query(q: str):
     else:
         return "Could not find a close enough match.", ""
 
+
 def handle_prereq_query(q: str):
     ents = extract_entities(q)
     code = ents.get("course_code")
@@ -165,12 +184,14 @@ def handle_prereq_query(q: str):
     parts = [f"{it['course_code']} {it['course_title']}" for it in reqs]
     return f"Prerequisites for {row['course_code'] or row['course_id']} {row['course_title']}: {', '.join(parts)}.", source_for_program(prog)
 
+
 def finance_redirect(q: str):
     t = (q or "").lower()
     if any(k in t for k in FINANCE_KEYWORDS):
         return ('For tuition, fees, and payments, please reach the NWU Finance Office: '
                 '<a href="https://www.facebook.com/NWUFinance" target="_blank" rel="noopener">facebook.com/NWUFinance</a>'), ""
     return None, None
+
 
 def route_intent(q: str):
     msg, src = finance_redirect(q)
@@ -206,6 +227,7 @@ def route_intent(q: str):
         return f"{row['course_code']}: {row['course_title']} — {row['units']} units.", source_for_program(prog)
     return "Could not find a close enough match.", ""
 
+
 def needs_clarification(msg: str) -> bool:
     triggers = [
         "please mention a program",
@@ -228,7 +250,6 @@ def submit_name():
     fname = first_name(name)
     push_sys(f"Nice to meet you, {fname}. How can I help?")
     st.session_state.name_input = ""
-
 
 
 def submit_question():

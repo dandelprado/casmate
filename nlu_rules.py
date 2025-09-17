@@ -1,6 +1,5 @@
 import re
 from typing import Dict, List, Optional
-
 import spacy
 from spacy.matcher import Matcher, PhraseMatcher
 
@@ -10,13 +9,16 @@ WS_RE = re.compile(r"\s+")
 PUNCT_RE = re.compile(r"[^\w\s\-]+")
 TAGALOG_PARTICLES = {"po","na","pa","ba","nga","naman","daw","raw","rin","din","lang","nlang"}
 
-PROGRAM_ABBREVIATIONS = {
+def _norm_key(s: str) -> str:
+    return " ".join((s or "").strip().split()).upper()
+
+_PROGRAM_CANON = {
     "CS": "Computer Science",
     "BSCS": "Computer Science",
     "PSYCH": "Psychology",
     "BS PSYCH": "Psychology",
     "POLSAY": "Political Science",
-    "POLSci": "Political Science",
+    "POLSCI": "Political Science",
     "AB POLSCI": "Political Science",
     "BAEL": "English Language",
     "ABEL": "English Language",
@@ -25,6 +27,8 @@ PROGRAM_ABBREVIATIONS = {
     "BIO": "Biology",
     "BS BIO": "Biology",
 }
+
+PROGRAM_ABBREVIATIONS: Dict[str, str] = {_norm_key(k): v for k, v in _PROGRAM_CANON.items()}
 
 
 def normalize_text(text: str) -> str:
@@ -58,10 +62,8 @@ def tl_simplify_token(tok: str) -> str:
             break
     return base
 
-
 def tl_simplify(tokens: List[str]) -> List[str]:
     return [tl_simplify_token(t) for t in tokens]
-
 
 matcher = Matcher(nlp.vocab)
 phrase_matcher = PhraseMatcher(nlp.vocab, attr="LOWER")
@@ -74,7 +76,6 @@ matcher.add("INTENT_FACULTY", [[{"LOWER":{"IN":["who","sino"]}},{"LOWER":{"IN":[
 
 CODE_RE = re.compile(r"\b([A-Za-z]{2,}\s?-?\s?\d{2,3})\b")
 
-
 def build_gazetteers(programs: List[Dict], courses: List[Dict]):
     if "PROG" in phrase_matcher:
         phrase_matcher.remove("PROG")
@@ -83,9 +84,18 @@ def build_gazetteers(programs: List[Dict], courses: List[Dict]):
 
     prog_docs = [nlp(p["program_name"]) for p in programs]
 
-    abbrev_docs = [nlp(abbr) for abbr in PROGRAM_ABBREVIATIONS.keys()]
-    all_prog_docs = prog_docs + abbrev_docs
+    base_docs = []
+    for p in programs:
+        name = p["program_name"]
+        low = name.lower()
+        if low.startswith("bs in "):
+            base_docs.append(nlp(name[6:]))
+        elif low.startswith("ba in "):
+            base_docs.append(nlp(name[6:]))
 
+    abbrev_docs = [nlp(k) for k in PROGRAM_ABBREVIATIONS.keys()]
+
+    all_prog_docs = prog_docs + base_docs + abbrev_docs
     if all_prog_docs:
         phrase_matcher.add("PROG", all_prog_docs)
 
@@ -113,15 +123,15 @@ def extract_entities(text: str) -> Dict[str, Optional[str]]:
 
     for m_id, s, e in phrase_matcher(doc):
         label = nlp.vocab.strings[m_id]
-        span = doc[s:e].text.upper()
+        span_raw = doc[s:e].text
         if label == "PROG" and not ents["program"]:
-            ents["program"] = PROGRAM_ABBREVIATIONS.get(span, span)
+            key = _norm_key(span_raw)
+            ents["program"] = PROGRAM_ABBREVIATIONS.get(key, span_raw)
         elif label == "COURSE_TITLE" and not ents["course_title"]:
-            ents["course_title"] = span
+            ents["course_title"] = span_raw
 
     m = CODE_RE.search(text or "")
     if m:
         ents["course_code"] = m.group(1).upper().replace(" ", "").replace("-", "")
-
     return ents
 
