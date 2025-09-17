@@ -1,9 +1,16 @@
 course_id,course_code,course_title,program_id,department_id,units
-PSY-001,PSY101,Introduction to Psychology,P-PSY,D-SS,3
-POLS-001,POLS101,Introduction to Political Science,P-POLS,D-SS,3
 CS-001,CS101,Introduction to Computer Science,P-CS,D-CS,3
 CS-002,CS102,Data Structures and Algorithms,P-CS,D-CS,3
+CS-003,CS201,Discrete Mathematics,P-CS,D-CS,3
+BIO-001,BIO101,General Biology,P-BIO,D-NS,3
+BIO-002,BIO102,Cell Biology,P-BIO,D-NS,3
+PSY-001,PSY101,Introduction to Psychology,P-PSY,D-SS,3
+PSY-002,PSY102,Developmental Psychology,P-PSY,D-SS,3
+POLS-001,POLS101,Introduction to Political Science,P-POLS,D-SS,3
+POLS-002,POLS201,Comparative Politics,P-POLS,D-SS,3
 ENG-001,ENG101,Academic Writing,P-ENG,D-LL,3
 COMM-001,COMM101,Introduction to Communication,P-COMM,D-LL,3
-BIO-001,BIO101,General Biology,P-BIO,D-NS,3
 MATH-001,MATH101,College Algebra,,D-MATH,3
+MATH-002,MATH102,Calculus I,,D-MATH,4
+STAT-001,Stat101,Introduction to Statistics,,D-MATH,3
+STAT-002,STAT201,Probability Theory,,D-MATH,3

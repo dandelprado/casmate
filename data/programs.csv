@@ -1,7 +1,7 @@
 program_id,program_name,department_id
-P-PSY,Psychology,D-SS
-P-POLS,Political Science,D-SS
-P-CS,Computer Science,D-CS
-P-ENG,English Language,D-LL
-P-COMM,Communications,D-LL
-P-BIO,Biology,D-NS
+P-CS,BS in Computer Science,D-CS
+P-PSY,BS in Psychology,D-SS
+P-POLS,BA in Political Science,D-SS
+P-BIO,BS in Biology,D-NS
+P-ENG,BA in English Language,D-LL
+P-COMM,BA in Communications,D-LL
