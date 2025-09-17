@@ -10,6 +10,22 @@ WS_RE = re.compile(r"\s+")
 PUNCT_RE = re.compile(r"[^\w\s\-]+")
 TAGALOG_PARTICLES = {"po","na","pa","ba","nga","naman","daw","raw","rin","din","lang","nlang"}
 
+PROGRAM_ABBREVIATIONS = {
+    "CS": "Computer Science",
+    "BSCS": "Computer Science",
+    "PSYCH": "Psychology",
+    "BS PSYCH": "Psychology",
+    "POLSAY": "Political Science",
+    "POLSci": "Political Science",
+    "AB POLSCI": "Political Science",
+    "BAEL": "English Language",
+    "ABEL": "English Language",
+    "BACOMM": "Communications",
+    "COMM": "Communications",
+    "BIO": "Biology",
+    "BS BIO": "Biology",
+}
+
 
 def normalize_text(text: str) -> str:
     t = (text or "").lower().replace("\u00a0"," ")
@@ -64,10 +80,16 @@ def build_gazetteers(programs: List[Dict], courses: List[Dict]):
         phrase_matcher.remove("PROG")
     if "COURSE_TITLE" in phrase_matcher:
         phrase_matcher.remove("COURSE_TITLE")
+
     prog_docs = [nlp(p["program_name"]) for p in programs]
+
+    abbrev_docs = [nlp(abbr) for abbr in PROGRAM_ABBREVIATIONS.keys()]
+    all_prog_docs = prog_docs + abbrev_docs
+
+    if all_prog_docs:
+        phrase_matcher.add("PROG", all_prog_docs)
+
     title_docs = [nlp(c["course_title"]) for c in courses]
-    if prog_docs:
-        phrase_matcher.add("PROG", prog_docs)
     if title_docs:
         phrase_matcher.add("COURSE_TITLE", title_docs)
 
@@ -88,15 +110,18 @@ def detect_intent(text: str) -> str:
 def extract_entities(text: str) -> Dict[str, Optional[str]]:
     doc = nlp(text or "")
     ents: Dict[str, Optional[str]] = {"program": None, "course_title": None, "course_code": None}
+
     for m_id, s, e in phrase_matcher(doc):
         label = nlp.vocab.strings[m_id]
-        span = doc[s:e].text
+        span = doc[s:e].text.upper()
         if label == "PROG" and not ents["program"]:
-            ents["program"] = span
+            ents["program"] = PROGRAM_ABBREVIATIONS.get(span, span)
         elif label == "COURSE_TITLE" and not ents["course_title"]:
             ents["course_title"] = span
+
     m = CODE_RE.search(text or "")
     if m:
         ents["course_code"] = m.group(1).upper().replace(" ", "").replace("-", "")
+
     return ents
 

@@ -82,25 +82,43 @@ def parse_year_sem(text: str):
     year = next((v for k,v in YEAR_MAP.items() if k in t), None)
     return year, sem
 
+
 def handle_plan_query(q: str):
     best = fuzzy_best_program(programs, q, score_cutoff=0)
     if best:
         prog_name, score, prog_row = best
+
         if score < 60:
             top = fuzzy_top_programs(programs, q, limit=3, score_cutoff=60)
             if top:
-                st.session_state.clarify = {"type":"program","options":top}
+                st.session_state.clarify = {"type": "program", "options": top}
                 return "Did you mean one of these programs? " + "; ".join(top), ""
-        else:
-            year, sem = parse_year_sem(q)
-            if not year or not sem:
-                return "Please include a year level and semester (e.g., first year first semester).", source_for_program(prog_row)
-            rows = courses_for_plan(plan, courses, prog_row["program_id"], year, sem)
-            if not rows:
-                return f"No plan entries found for {prog_row['program_name']} year {year} semester {sem}.", source_for_program(prog_row)
-            items = [f"{r['course_code'] or r['course_id']} {r['course_title']} ({r['units']} units)" for r in rows]
-            return f"{prog_row['program_name']} year {year} semester {sem} includes {', '.join(items)}.", source_for_program(prog_row)
+
+        year, sem = parse_year_sem(q)
+
+        if year and not sem:
+            sem = 1
+
+        if not year:
+            return "Please include a year level (e.g., first year, 2nd year).", source_for_program(prog_row)
+        if not sem:
+            return "Please include a semester or trimester (e.g., first semester, 2nd sem).", source_for_program(prog_row)
+
+        rows = courses_for_plan(plan, courses, prog_row["program_id"], year, sem)
+        if not rows:
+            return f"No plan entries found for {prog_name} year {year} semester {sem}.", source_for_program(prog_row)
+
+        ord_map = {1: '1st', 2: '2nd', 3: '3rd', 4: '4th'}
+        year_str = ord_map.get(year, f"{year}th")
+        sem_str = f"{sem}st" if sem == 1 else f"{sem}nd" if sem == 2 else f"{sem}th"
+
+        items = [f"{r['course_code'] or r['course_id']} {r['course_title']} ({r['units']} units)" for r in rows]
+
+        return (f"These are the courses you will be taking as a {year_str} year {prog_name} student "
+                f"during the {sem_str} semester: {', '.join(items)}."), source_for_program(prog_row)
+
     return "Please mention a program (e.g., Psychology, Computer Science).", ""
+
 
 def handle_faculty_query(q: str):
     m = re.search(r'\b([A-Za-z]{2,}\s*\d{2,3})\b', q or "")
