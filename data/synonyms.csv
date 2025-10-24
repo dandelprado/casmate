@@ -1,7 +1,12 @@
-alias,course_id
+alias,courseid
 Intro to Psych,PSY-001
 Data Structures,CS-002
+data struct,CS-002
+datastruct,CS-002
 Academic Writing,ENG-001
 Intro to Comm,COMM-001
 College Algebra,MATH-001
 Calculus 1,MATH-002
+calc 1,MATH-002
+cal 1,MATH-002
+

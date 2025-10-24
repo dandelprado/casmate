@@ -4,134 +4,162 @@ import spacy
 from spacy.matcher import Matcher, PhraseMatcher
 
 nlp = spacy.blank("en")
+matcher = Matcher(nlp.vocab)
+phrasematcher = PhraseMatcher(nlp.vocab, attr="LOWER")
 
 WS_RE = re.compile(r"\s+")
 PUNCT_RE = re.compile(r"[^\w\s\-]+")
-TAGALOG_PARTICLES = {"po","na","pa","ba","nga","naman","daw","raw","rin","din","lang","nlang"}
+CODE_RE = re.compile(r"\b([A-Za-z]{2,4})[\s\-]?(\d{2,3})\b")
 
-def _norm_key(s: str) -> str:
-    return " ".join((s or "").strip().split()).upper()
-
-_PROGRAM_CANON = {
-    "CS": "Computer Science",
-    "BSCS": "Computer Science",
-    "PSYCH": "Psychology",
-    "BS PSYCH": "Psychology",
-    "POLSAY": "Political Science",
-    "POLSCI": "Political Science",
-    "AB POLSCI": "Political Science",
-    "BAEL": "English Language",
-    "ABEL": "English Language",
-    "BACOMM": "Communications",
-    "COMM": "Communications",
-    "BIO": "Biology",
-    "BS BIO": "Biology",
+PROGRAM_CANON = {
+    "CS": "BS in Computer Science", "BSCS": "BS in Computer Science",
+    "PSYCH": "BS in Psychology", "BS PSYCH": "BS in Psychology",
+    "POLSAY": "BA in Political Science", "POLSCI": "BA in Political Science", "AB POLSCI": "BA in Political Science",
+    "BAEL": "BA in English Language", "ABEL": "BA in English Language",
+    "BACOMM": "BA in Communications", "COMM": "BA in Communications",
+    "BIO": "BS in Biology", "BS BIO": "BS in Biology",
 }
 
-PROGRAM_ABBREVIATIONS: Dict[str, str] = {_norm_key(k): v for k, v in _PROGRAM_CANON.items()}
+def norm_key(s: str) -> str:
+    return "".join(s or "").strip().upper()
 
+PROGRAM_ABBREVIATIONS: Dict[str, str] = {norm_key(k): v for k, v in PROGRAM_CANON.items()}
 
-def normalize_text(text: str) -> str:
-    t = (text or "").lower().replace("\u00a0"," ")
-    t = PUNCT_RE.sub(" ", t)
-    t = WS_RE.sub(" ", t).strip()
-    return t
-
-
-def tokenize(text: str) -> List[str]:
-    return [tok for tok in WS_RE.split(text) if tok]
-
-
-def strip_particles(tokens: List[str]) -> List[str]:
-    return [t for t in tokens if t not in TAGALOG_PARTICLES]
-
-
-def tl_simplify_token(tok: str) -> str:
-    base = tok
-    if "um" in base[:4]:
-        base = base.replace("um","",1)
-    for pref in ("ipag","mag","nag","pag","ma","na","i"):
-        if base.startswith(pref):
-            base = base[len(pref):]
-            break
-    if len(base) >= 4 and base[:2] == base[2:4]:
-        base = base[2:]
-    for suf in ("hin","in","an","han","ng"):
-        if base.endswith(suf) and len(base) > len(suf)+1:
-            base = base[:-len(suf)]
-            break
-    return base
-
-def tl_simplify(tokens: List[str]) -> List[str]:
-    return [tl_simplify_token(t) for t in tokens]
-
-matcher = Matcher(nlp.vocab)
-phrase_matcher = PhraseMatcher(nlp.vocab, attr="LOWER")
-
-matcher.add("INTENT_GREET", [[{"LOWER":{"IN":["hi","hello","hey","kumusta","kamusta"]}}]])
-matcher.add("INTENT_GOODBYE", [[{"LOWER":{"IN":["bye","goodbye","salamat","thanks"]}}]])
-matcher.add("INTENT_PREREQ", [[{"LOWER":{"IN":["prereq","prerequisite","requirement","requirements","kailangan","dapat"]}}]])
-matcher.add("INTENT_PLAN", [[{"LOWER":{"IN":["first","second","third","fourth","1st","2nd","3rd","4th","year"]}},{"LOWER":{"IN":["semester","sem"]},"OP":"?"}]])
-matcher.add("INTENT_FACULTY", [[{"LOWER":{"IN":["who","sino"]}},{"LOWER":{"IN":["teaches","is","ang"]},"OP":"?"},{"LOWER":{"IN":["teaching","instructor","teacher"]},"OP":"?"}]])
-
-CODE_RE = re.compile(r"\b([A-Za-z]{2,}\s?-?\s?\d{2,3})\b")
-
-def build_gazetteers(programs: List[Dict], courses: List[Dict]):
-    if "PROG" in phrase_matcher:
-        phrase_matcher.remove("PROG")
-    if "COURSE_TITLE" in phrase_matcher:
-        phrase_matcher.remove("COURSE_TITLE")
-
-    prog_docs = [nlp(p["program_name"]) for p in programs]
-
+def build_gazetteers(programs: List[Dict], courses: List[Dict], synonyms: List[Dict] = None):
+    if "PROG" in phrasematcher:
+        phrasematcher.remove("PROG")
+    if "COURSETITLE" in phrasematcher:
+        phrasematcher.remove("COURSETITLE")
+    
+    prog_docs = [nlp(p["program_name"]) for p in programs if p.get("program_name")]
     base_docs = []
     for p in programs:
-        name = p["program_name"]
+        name = p.get("program_name") or ""
         low = name.lower()
-        if low.startswith("bs in "):
-            base_docs.append(nlp(name[6:]))
-        elif low.startswith("ba in "):
-            base_docs.append(nlp(name[6:]))
-
+        if low.startswith("bs "): base_docs.append(nlp(name[3:]))
+        elif low.startswith("ba "): base_docs.append(nlp(name[3:]))
+    
     abbrev_docs = [nlp(k) for k in PROGRAM_ABBREVIATIONS.keys()]
-
     all_prog_docs = prog_docs + base_docs + abbrev_docs
     if all_prog_docs:
-        phrase_matcher.add("PROG", all_prog_docs)
+        phrasematcher.add("PROG", all_prog_docs)
+    
+    title_docs = [nlp(c["course_title"]) for c in courses if c.get("course_title")]
+    
+    alias_docs = []
+    if synonyms:
+        for row in synonyms:
+            alias = row.get("alias")
+            if alias:
+                alias_docs.append(nlp(alias))
+                if alias.endswith("s"):
+                    alias_docs.append(nlp(alias[:-1]))
+                else:
+                    alias_docs.append(nlp(alias + "s"))
+    
+    short_docs = []
+    for c in courses:
+        t = (c.get("course_title") or "").lower()
+        
+        if "data structure" in t or "data structures" in t:
+            variations = [
+                "data struct", "datastruct", "data structure", "data structures",
+                "ds", "data algo", "data structures and algorithms",
+                "dsa", "data struct algo"
+            ]
+            for v in variations:
+                short_docs.append(nlp(v))
+        
+        if "calculus" in t:
+            calc_vars = ["calc 1", "cal 1", "calculus 1", "calc i", "calculus i", "calc"]
+            for v in calc_vars:
+                short_docs.append(nlp(v))
+        
+        if "psychology" in t:
+            short_docs.extend([nlp("psych"), nlp("psychology"), nlp("intro psych")])
+        
+        if "biology" in t:
+            short_docs.extend([nlp("bio"), nlp("biology"), nlp("general bio")])
+    
+    all_course_docs = title_docs + alias_docs + short_docs
+    if all_course_docs:
+        phrasematcher.add("COURSETITLE", all_course_docs)
 
-    title_docs = [nlp(c["course_title"]) for c in courses]
-    if title_docs:
-        phrase_matcher.add("COURSE_TITLE", title_docs)
+def _add_lower_in(name: str, words: List[str]): 
+    matcher.add(name, [[{"LOWER": {"IN": words}}]])
 
+_add_lower_in("INTENT_GREET", ["hi","hello","hey","kumusta","kamusta"])
+_add_lower_in("INTENT_GOODBYE", ["bye","goodbye","salamat","thanks","thank","tnx"])
+
+matcher.add("INTENT_CONFIRM", [
+    [{"LOWER":{"IN":["sure","sigurado"]}}],
+    [{"LOWER":{"IN":["are","tama","correct"]}}, {"LOWER":{"IN":["you","ba"]}, "OP":"?"}, {"LOWER":{"IN":["sure","tama","correct"]}}],
+    [{"LOWER":{"IN":["tama","correct"]}}, {"LOWER":{"IN":["ba","po"]}, "OP":"?"}]
+])
+
+matcher.add("INTENT_CONFUSION", [
+    [{"LOWER":{"IN":["di","hindi","i"]}}, {"LOWER":{"IN":["get","gets","maintindihan","intindihan","understand"]}}],
+    [{"LOWER":{"IN":["what","ano"]}}, {"LOWER":{"IN":["are","ka","kayo"]}, "OP":"?"}, {"LOWER":{"IN":["talking","saying"]}, "OP":"?"}],
+    [{"LOWER":{"IN":["huh","ha","pakiulit","again","repeat"]}}]
+])
+
+matcher.add("INTENT_PREREQ", [
+    [{"LOWER": {"IN": ["prereq","prereqs","prerequisite","prerequisites","requirement","requirements","kailangan","dapat"]}}],
+    [{"LOWER": {"IN": ["what","what's","whats","ano"]}}, {"LOWER": {"IN": ["is","are","the","ang"]}, "OP":"?"}, {"LOWER": {"IN": ["the"]}, "OP":"?"}, {"LOWER": {"IN": ["prereq","prereqs","prerequisite","prerequisites","requirement","requirements"]}}],
+    [{"LOWER": {"IN": ["prereq","prereqs","prerequisite","prerequisites"]}}, {"LOWER": {"IN": ["of","for","ng","para","sa"]}}],
+    [{"LOWER": {"IN": ["what","ano"]}}, {"LOWER": {"IN": ["do","should"]}, "OP":"?"}, {"LOWER": {"IN": ["i","we"]}, "OP":"?"}, {"LOWER": {"IN": ["need","take","kailangan"]}}, {"LOWER": {"IN": ["before","for","prior","bago"]}}],
+])
+
+matcher.add("INTENT_PLAN", [
+    [{"LOWER": {"IN": ["first","second","third","fourth","1st","2nd","3rd","4th","year","yr"]}}, {"LOWER": {"IN": ["semester","sem","trimester","tri"]}, "OP":"?"}]
+])
+
+matcher.add("INTENT_FACULTY", [
+    [{"LOWER":{"IN":["who","sino"]}}, {"LOWER":{"IN":["teaches","is","ang","teaching","instructor","teacher"]}, "OP":"?"}]
+])
 
 def detect_intent(text: str) -> str:
     doc = nlp(text or "")
-    matches = {nlp.vocab.strings[m_id] for m_id, _s, _e in matcher(doc)}
-    if "INTENT_GREET" in matches: return "small_talk"
-    if "INTENT_GOODBYE" in matches: return "goodbye"
-    if "INTENT_PREREQ" in matches: return "prerequisites"
-    if "INTENT_FACULTY" in matches: return "faculty_lookup"
-    if "INTENT_PLAN" in matches: return "plan_lookup"
-    toks = tokenize(normalize_text(text)); toks = strip_particles(toks); lemmas = tl_simplify(toks)
-    if any(l.startswith("turo") for l in lemmas): return "faculty_lookup"
-    return "course_info"
-
+    matches = {nlp.vocab.strings[mid] for mid, _, _ in matcher(doc)}
+    
+    text_lower = (text or "").lower()
+    prereq_keywords = ["prereq", "prerequisite", "requirement", "what's the prerequisite", "whats the prerequisite"]
+    has_prereq_keyword = any(kw in text_lower for kw in prereq_keywords)
+    
+    if "INTENT_PREREQ" in matches or has_prereq_keyword:
+        return "prerequisites"
+    if "INTENT_GREET" in matches: 
+        return "smalltalk"
+    if "INTENT_GOODBYE" in matches: 
+        return "goodbye"
+    if "INTENT_CONFIRM" in matches: 
+        return "confirm"
+    if "INTENT_CONFUSION" in matches: 
+        return "confusion"
+    if "INTENT_FACULTY" in matches: 
+        return "facultylookup"
+    if "INTENT_PLAN" in matches: 
+        return "planlookup"
+    
+    return "courseinfo"
 
 def extract_entities(text: str) -> Dict[str, Optional[str]]:
     doc = nlp(text or "")
-    ents: Dict[str, Optional[str]] = {"program": None, "course_title": None, "course_code": None}
-
-    for m_id, s, e in phrase_matcher(doc):
-        label = nlp.vocab.strings[m_id]
-        span_raw = doc[s:e].text
+    ents: Dict[str, Optional[str]] = {"program": None, "coursetitle": None, "coursecode": None}
+    
+    for mid, s, e in phrasematcher(doc):
+        label = nlp.vocab.strings[mid]
+        span_text = doc[s:e].text
+        
         if label == "PROG" and not ents["program"]:
-            key = _norm_key(span_raw)
-            ents["program"] = PROGRAM_ABBREVIATIONS.get(key, span_raw)
-        elif label == "COURSE_TITLE" and not ents["course_title"]:
-            ents["course_title"] = span_raw
-
+            key = norm_key(span_text)
+            ents["program"] = PROGRAM_ABBREVIATIONS.get(key, span_text)
+        elif label == "COURSETITLE" and not ents["coursetitle"]:
+            ents["coursetitle"] = span_text
+    
     m = CODE_RE.search(text or "")
-    if m:
-        ents["course_code"] = m.group(1).upper().replace(" ", "").replace("-", "")
+    if m and not ents["coursecode"]:
+        ents["coursecode"] = f"{m.group(1).upper()}{m.group(2)}"
+    
     return ents
 

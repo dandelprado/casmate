@@ -1,294 +1,297 @@
 import re
-from datetime import datetime
 from pathlib import Path
-
 import streamlit as st
 
-from chat_ui import get_chat_bubble_html, get_footer_html
+from chat_ui import getchatbubblehtml, getfooterhtml
 from data_api import (
-    load_all, find_course_by_code, courses_for_plan,
-    fuzzy_best_program, fuzzy_top_programs,
-    fuzzy_best_course_title, fuzzy_top_course_titles,
-    get_prerequisites
+    load_all, find_course_by_code, courses_for_plan, fuzzy_best_program,
+    fuzzy_top_programs, fuzzy_best_course_title, fuzzy_top_course_titles,
+    get_prerequisites, course_by_alias
 )
-from nlu_rules import nlp, matcher, phrase_matcher, build_gazetteers, detect_intent, extract_entities
+from nlu_rules import (
+    build_gazetteers, detect_intent, extract_entities
+)
 
-
-def load_css(rel_path: str):
-    css_path = (Path(__file__).parent / rel_path).resolve()
-    if css_path.exists():
-        css = css_path.read_text(encoding="utf-8")
+def load_css_rel_path(css_path: Path):
+    relpath = (Path(__file__).parent / css_path).resolve()
+    if relpath.exists():
+        css = relpath.read_text(encoding="utf-8")
         st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
 st.set_page_config(page_title="CASmate Chat", layout="centered")
-st.title("CASmate - Northwestern University of Laoag CAS Chatbot")
-load_css("ui/styles.css")
+st.markdown("<h1 class='main-title'>CASmate - Northwestern University of Laoag CAS Chatbot</h1>", unsafe_allow_html=True)
+load_css_rel_path(Path("styles.css"))
 
 if "data" not in st.session_state:
     st.session_state.data = load_all()
+
 data = st.session_state.data
 departments = data["departments"]
 programs = data["programs"]
 courses = data["courses"]
 plan = data["plan"]
 prereqs = data.get("prereqs", [])
+synonyms = data.get("synonyms", [])
 
-build_gazetteers(programs, courses)
+build_gazetteers(programs, courses, synonyms)
 
 st.session_state.setdefault("chat", [])
 st.session_state.setdefault("asked_name", False)
-st.session_state.setdefault("user_name", "")
-st.session_state.setdefault("clarify", None)
+st.session_state.setdefault("user_name", None)
+st.session_state.setdefault("last_context", {"type": None, "course": None, "program": None})
 
-GOODBYES = {"bye","goodbye","thanks","thank you","no","none","nothing","that's all","thats all","nope","nah"}
-FINANCE_KEYWORDS = {"finance","billing","payment","payments","pay","cashier","tuition","fees","fee","balance","statement","downpayment","installment","overdue","surcharge"}
+def set_context(ctx_type=None, course=None, program=None):
+    if ctx_type: st.session_state.last_context["type"] = ctx_type
+    if course is not None: st.session_state.last_context["course"] = course
+    if program is not None: st.session_state.last_context["program"] = program
 
-def time_greeting():
-    h = datetime.now().hour
-    if 5 <= h < 12: return "Good morning"
-    if 12 <= h < 18: return "Good afternoon"
-    return "Hello"
+if not st.session_state.chat:
+    intro = (
+        "Good afternoon! I'm CASmate, a chatbot built to assist students of the College of Arts and Sciences with quick course and curriculum questions. "
+        "What's your name?"
+    )
+    st.session_state.chat.append({"sender": "CASmate", "message": intro, "source": None})
 
-def push(sender: str, msg: str, source: str | None = None):
-    sentences = re.split(r'(?<=[.!?])\s+', (msg or "").strip())
-    sentences = [s for s in sentences if s]
-    text = " ".join(sentences[:3]) if sentences else msg
-    st.session_state.chat.append((sender, text, (source or "").strip()))
-
-def push_sys(msg: str):
-    push("CASmate", msg, source="")
-
-
-def first_name(user) -> str:
-    user = user if isinstance(user, str) else " ".join(map(str, user)) if isinstance(user, (list, tuple)) else str(user or "")
-    user = user.strip()
-    return user.split()[0] if user else ""
-
-
-def source_for_program(program_row: dict | None) -> str:
-    dept_id = (program_row or {}).get("department_id")
-    dept = next((d for d in departments if d["department_id"] == dept_id), None)
-    if dept:
-        return f"Department Head, {dept['department_name']} (internal)"
-    cas = next((d for d in departments if (d.get("dean_flag") or "").upper() == "Y"), None)
-    return f"{(cas or {}).get('department_name', 'CAS Dean’s Office')} (internal)"
-
-SEM_MAP = {"first sem":1,"1st sem":1,"first semester":1,"semester 1":1,"sem 1":1,"second sem":2,"2nd sem":2,"second semester":2,"semester 2":2,"sem 2":2}
-YEAR_MAP = {"first":1,"1st":1,"year 1":1,"second":2,"2nd":2,"year 2":2,"third":3,"3rd":3,"year 3":3,"fourth":4,"4th":4,"year 4":4}
+ORD = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
+SEM_MAP = {"first": 1, "1st": 1, "sem 1": 1, "semester 1": 1, "sem1": 1, "unang": 1, "una": 1,
+           "second": 2, "2nd": 2, "sem 2": 2, "semester 2": 2, "sem2": 2, "ikalawa": 2, "pangalawa": 2,
+           "third": 3, "3rd": 3, "sem 3": 3, "semester 3": 3, "sem3": 3}
+YEAR_MAP = {"first": 1, "1st": 1, "year 1": 1, "yr 1": 1, "unang": 1, "una": 1,
+            "second": 2, "2nd": 2, "year 2": 2, "yr 2": 2, "ikalawa": 2, "pangalawa": 2,
+            "third": 3, "3rd": 3, "year 3": 3, "yr 3": 3, "ikatlo": 3,
+            "fourth": 4, "4th": 4, "year 4": 4, "yr 4": 4, "ikaapat": 4}
 
 def parse_year_sem(text: str):
     t = (text or "").lower()
-    sem = next((v for k,v in SEM_MAP.items() if k in t), None)
-    year = next((v for k,v in YEAR_MAP.items() if k in t), None)
+    year = None
+    sem = None
+    for k, v in YEAR_MAP.items():
+        if k in t:
+            year = v
+            break
+    for k, v in SEM_MAP.items():
+        if k in t or f"{v}nd sem" in t or f"{v}st sem" in t or f"{v}rd sem" in t or f"{v}th sem" in t:
+            sem = v
+            break
+    m_y = re.search(r"(1st|2nd|3rd|4th)\s*(yr|year)", t)
+    if m_y and not year:
+        year = {"1st": 1, "2nd": 2, "3rd": 3, "4th": 4}[m_y.group(1)]
+    m_s = re.search(r"(1st|2nd|3rd)\s*sem", t)
+    if m_s and not sem:
+        sem = {"1st": 1, "2nd": 2, "3rd": 3}[m_s.group(1)]
     return year, sem
 
+def source_for_program(program_row: dict | None) -> str:
+    deptid = (program_row or {}).get("department_id")
+    if deptid:
+        dept = next((d for d in departments if d["department_id"] == deptid), None)
+        if dept:
+            return f"Department Head, {dept['department_name']}"
+    dean = next((d for d in departments if (d.get("dean_flag") or '').upper() == "Y"), None)
+    name = (dean or {}).get("department_name", "CAS Dean's Office")
+    return name
 
-def _resolve_program_row(programs, detected_name: str):
-    if not detected_name:
+def resolve_program_row(name: str | None):
+    if not name:
         return None
-    dn = detected_name.strip().lower()
-
+    dn = name.strip().lower()
     row = next((p for p in programs if p["program_name"].strip().lower() == dn), None)
     if row:
         return row
-
     row = next((p for p in programs if p["program_name"].strip().lower().endswith(dn)), None)
     if row:
         return row
+    return next((p for p in programs if dn in p["program_name"].strip().lower()), None)
 
-    row = next((p for p in programs if f" {dn} " in f" {p['program_name'].strip().lower()} "), None)
-    if row:
-        return row
-    return None
+def add_message(sender: str, message: str, source: str | None = None):
+    st.session_state.chat.append({"sender": sender, "message": message, "source": source})
 
+def handle_smalltalk():
+    return "Hello! How can CASmate help with your courses or curriculum today?", None
+
+def handle_goodbye():
+    return "Salamat! If you have more questions about your courses, just message again.", None
+
+def handle_confirm():
+    lc = st.session_state.last_context
+    if lc["type"] == "prereq" and lc["course"]:
+        row = lc["course"]
+        reqs = get_prerequisites(prereqs, courses, row["course_id"])
+        if not reqs:
+            return f"Yes—{row.get('course_code') or row['course_id']} {row['course_title']} has no listed prerequisites.", None
+        parts = ", ".join(f"{r['course_code']} {r['course_title']}" for r in reqs)
+        return f"Yes—prerequisites for {row.get('course_code') or row['course_id']} {row['course_title']} are: {parts}.", None
+    return "Sure—what would you like me to double‑check?", None
+
+def handle_confusion():
+    return "I understand you'd like more information. Could you please provide the specific course code (e.g., CS102) or the exact course title?", None
 
 def handle_plan_query(q: str):
     ents = extract_entities(q)
-    prog_name = ents.get("program")
-    prog_row = _resolve_program_row(programs, prog_name) if prog_name else None
-
-    if not prog_row:
-        best = fuzzy_best_program(programs, q, score_cutoff=75 if len((q or '').strip()) < 6 else 65)
+    progname = ents.get("program")
+    progrow = resolve_program_row(progname) if progname else None
+    if not progrow:
+        best = fuzzy_best_program(programs, q, score_cutoff=70 if len((q or '').strip()) >= 6 else 60)
         if best:
-            prog_name, _score, prog_row = best
-
-    if not prog_row:
-        return "Please mention a valid program (e.g., Psychology, Computer Science).", ""
-
+            _, _, progrow = best
+    if not progrow:
+        return "Please mention a valid program (e.g., Psychology, Computer Science).", None
     year, sem = parse_year_sem(q)
     if year and not sem:
         sem = 1
     if not year:
-        return "Please include a year level (e.g., first year, 2nd year).", source_for_program(prog_row)
+        return "Please include a year level (e.g., first year, 2nd year).", None
     if not sem:
-        return "Please include a semester or trimester (e.g., first semester, 2nd sem).", source_for_program(prog_row)
-
-    rows = courses_for_plan(plan, courses, prog_row["program_id"], year, sem)
+        return "Please include a semester (e.g., first sem, 2nd sem).", None
+    rows = courses_for_plan(plan, courses, progrow["program_id"], year, sem)
     if not rows:
-        return f"No plan entries found for {prog_row['program_name']} year {year} semester {sem}.", source_for_program(prog_row)
-
-    ord_map = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
-    year_str = ord_map.get(year, f"{year}th")
-    sem_str = "1st" if sem == 1 else "2nd" if sem == 2 else f"{sem}th"
-    items = [f"{r.get('course_code') or r['course_id']} {r['course_title']} ({r['units']} units)" for r in rows]
-    msg = (
-        f"These are the courses you will be taking as a {year_str} year {prog_row['program_name']} student "
-        f"during the {sem_str} semester: {', '.join(items)}."
-    )
-    return msg, source_for_program(prog_row)
-
+        return f"No plan entries found for {progrow['program_name']} year {year} semester {sem}.", source_for_program(progrow)
+    yearstr = ORD.get(year, f"{year}th")
+    semstr = "1st" if sem == 1 else "2nd" if sem == 2 else f"{sem}th"
+    items = [f"- {(r.get('course_code') or r['course_id'])} {r['course_title']}" for r in rows]
+    msg = f"These are the courses for {yearstr} year {progrow['program_name']} {semstr} semester:\n\n" + "\n".join(items)
+    set_context(ctx_type="plan", program=progrow)
+    return msg, source_for_program(progrow)
 
 def handle_faculty_query(q: str):
-    m = re.search(r'\b([A-Za-z]{2,}\s*\d{2,3})\b', q or "")
+    m = re.search(r"\b([A-Za-z]{2,4})[\s\-]?(\d{2,3})\b", q or "")
     if m:
-        code = m.group(1)
+        code = f"{m.group(1).upper()}{m.group(2)}"
         c = find_course_by_code(courses, code)
         if c:
             prog = next((p for p in programs if p["program_id"] == c.get("program_id")), None)
-            return f"{c['course_code'] or c['course_id']}: {c['course_title']} — instructor assignment will be provided when class_sections.csv is available.", source_for_program(prog)
-    best = fuzzy_best_course_title(courses, q, score_cutoff=0)
-    if not best:
-        return "Could not find a matching course.", ""
-    title, score, row = best
-    prog = next((p for p in programs if p["program_id"] == row.get("program_id")), None)
-    if score >= 85:
-        return f"{row['course_code'] or row['course_id']}: {row['course_title']} — instructor assignment will be provided when class_sections.csv is available.", source_for_program(prog)
-    elif score >= 60:
-        top = fuzzy_top_course_titles(courses, q, limit=3, score_cutoff=60)
-        if top:
-            options = [f"{t} ({r['course_code'] or r['course_id']})" for (t, s, r) in top]
-            st.session_state.clarify = {"type":"course_title","options":options}
-            return "Did you mean: " + "; ".join(options) + "?", ""
-        return "Could not find a close enough match.", ""
-    else:
-        return "Could not find a close enough match.", ""
+            set_context(ctx_type="courseinfo", course=c, program=prog)
+            return f"{c.get('course_code') or c['course_id']} {c['course_title']} instructor assignment will be provided when section data becomes available.", source_for_program(prog)
+    return "Not sure which course—please provide a course code.", None
 
+def normalize_course_query(text: str) -> str:
+    t = (text or "").lower()
+    t = re.sub(r'\b(the|of|a|an|for|to|in)\b', ' ', t)
+    t = re.sub(r'\s+', ' ', t).strip()
+    return t
 
 def handle_prereq_query(q: str):
     ents = extract_entities(q)
-    code = ents.get("course_code")
-    c = find_course_by_code(courses, code) if code else None
-    row = c
-    if not row and ents.get("course_title"):
-        row = next((x for x in courses if x["course_title"].lower() == ents["course_title"].lower()), None)
+    code = ents.get("coursecode")
+    row = find_course_by_code(courses, code) if code else None
+    
+    if not row and ents.get("coursetitle"):
+        title_lower = ents["coursetitle"].lower()
+        row = next((x for x in courses if (x.get("course_title") or "").lower() == title_lower), None)
+        
+        if not row:
+            norm_query = normalize_course_query(ents["coursetitle"])
+            for c in courses:
+                norm_title = normalize_course_query(c.get("course_title", ""))
+                if norm_query == norm_title or norm_query in norm_title or norm_title in norm_query:
+                    row = c
+                    break
+    
     if not row:
-        best = fuzzy_best_course_title(courses, q, score_cutoff=70)
+        alias_hit = course_by_alias(data, q.strip())
+        if alias_hit:
+            row = alias_hit
+        else:
+            norm_q = normalize_course_query(q)
+            alias_hit = course_by_alias(data, norm_q)
+            if alias_hit:
+                row = alias_hit
+    
+    if not row:
+        q_norm = normalize_course_query(q)
+        for c in courses:
+            title_norm = normalize_course_query(c.get("course_title", ""))
+            if len(q_norm) > 5 and (q_norm in title_norm or title_norm in q_norm):
+                row = c
+                break
+            q_words = set(q_norm.split())
+            title_words = set(title_norm.split())
+            if len(q_words) >= 2 and q_words.issubset(title_words):
+                row = c
+                break
+    
+    if not row:
+        best = fuzzy_best_course_title(courses, q, score_cutoff=50)
         if best:
-            _title, _score, row = best
+            _, _, row = best
+    
     if not row:
-        return "Could not identify the course to check prerequisites. Please mention the exact title or code.", ""
+        q_lower = q.lower()
+        term_map = {
+            "data struct": "CS-002", "datastruct": "CS-002", "data structure": "CS-002",
+            "calculus": "MATH-002", "calc": "MATH-002",
+            "psychology": "PSY-001", "psych": "PSY-001",
+            "biology": "BIO-001", "bio": "BIO-001",
+        }
+        
+        for term, course_id in term_map.items():
+            if term in q_lower:
+                row = next((c for c in courses if c.get("course_id") == course_id), None)
+                if row:
+                    break
+    
+    if not row:
+        return "Could not identify the course to check prerequisites. Please mention the exact title or code.", None
+    
     reqs = get_prerequisites(prereqs, courses, row["course_id"])
     prog = next((p for p in programs if p["program_id"] == row.get("program_id")), None)
+    set_context(ctx_type="prereq", course=row, program=prog)
+    
     if not reqs:
-        return f"{row['course_code'] or row['course_id']} {row['course_title']} has no listed prerequisites.", source_for_program(prog)
-    parts = [f"{it['course_code']} {it['course_title']}" for it in reqs]
-    return f"Prerequisites for {row['course_code'] or row['course_id']} {row['course_title']}: {', '.join(parts)}.", source_for_program(prog)
+        return f"{row.get('course_code') or row['course_id']} {row['course_title']} has no listed prerequisites.", source_for_program(prog)
+    
+    parts = [f"- {it['course_code']} {it['course_title']}" for it in reqs]
+    return f"Prerequisites for {row.get('course_code') or row['course_id']} {row['course_title']}:\n\n" + "\n".join(parts), source_for_program(prog)
 
-
-def finance_redirect(q: str):
-    t = (q or "").lower()
-    if any(k in t for k in FINANCE_KEYWORDS):
-        return ('For tuition, fees, and payments, please reach the NWU Finance Office: '
-                '<a href="https://www.facebook.com/NWUFinance" target="_blank" rel="noopener">facebook.com/NWUFinance</a>'), ""
-    return None, None
-
-
-def route_intent(q: str):
-    msg, src = finance_redirect(q)
-    if msg is not None:
-        return msg, src
-    intent = detect_intent(q)
-    if intent == "small_talk":
-        return "Hi! How can I help today?", ""
-    if intent == "goodbye":
-        return "Thanks for chatting—take care!", ""
-    if intent == "plan_lookup":
-        return handle_plan_query(q)
-    if intent == "faculty_lookup":
-        return handle_faculty_query(q)
-    if intent == "prerequisites":
-        return handle_prereq_query(q)
-    ents = extract_entities(q)
-    code = ents.get("course_code")
-    if code:
+def handle_courseinfo_query(q: str):
+    m = re.search(r"\b([A-Za-z]{2,4})[\s\-]?(\d{2,3})\b", q or "")
+    if m:
+        code = f"{m.group(1).upper()}{m.group(2)}"
         c = find_course_by_code(courses, code)
         if c:
             prog = next((p for p in programs if p["program_id"] == c.get("program_id")), None)
-            return f"{c['course_code']}: {c['course_title']} — {c['units']} units.", source_for_program(prog)
-    if ents.get("course_title"):
-        row = next((x for x in courses if x["course_title"].lower() == ents["course_title"].lower()), None)
-        if row:
-            prog = next((p for p in programs if p["program_id"] == row.get("program_id")), None)
-            return f"{row['course_code']}: {row['course_title']} — {row['units']} units.", source_for_program(prog)
-    best = fuzzy_best_course_title(courses, q, score_cutoff=65)
-    if best:
-        _title, _score, row = best
-        prog = next((p for p in programs if p["program_id"] == row.get("program_id")), None)
-        return f"{row['course_code']}: {row['course_title']} — {row['units']} units.", source_for_program(prog)
-    return "Could not find a close enough match.", ""
+            set_context(ctx_type="courseinfo", course=c, program=prog)
+            return f"{c.get('course_code') or c['course_id']} {c['course_title']} is a {c.get('units','')} unit course.", source_for_program(prog)
+    return "Hmm, not sure which course you mean—try a course code like CS102.", None
 
+def route_intent(text: str):
+    intent = detect_intent(text)
+    if intent == "smalltalk": return handle_smalltalk()
+    if intent == "goodbye": return handle_goodbye()
+    if intent == "confirm": return handle_confirm()
+    if intent == "confusion": return handle_confusion()
+    if intent == "prerequisites": return handle_prereq_query(text)
+    if intent == "facultylookup": return handle_faculty_query(text)
+    if intent == "planlookup": return handle_plan_query(text)
+    return handle_courseinfo_query(text)
 
-def needs_clarification(msg: str) -> bool:
-    triggers = [
-        "please mention a program",
-        "please include a year",
-        "could not identify the course",
-        "could not find a matching course",
-        "could not find a close enough match"
-    ]
-    return any(t in (msg or "").lower() for t in triggers)
-
-
-def submit_name():
-    name = st.session_state.get("name_input", "")
-    if isinstance(name, (list, tuple)):
-        name = " ".join(map(str, name))
-    name = name.strip()
-    if not name:
-        return
-    st.session_state.user_name = name
-    fname = first_name(name)
-    push_sys(f"Nice to meet you, {fname}. How can I help?")
-    st.session_state.name_input = ""
-
-
-def submit_question():
-    q = st.session_state.get("question_input", "").strip()
-    if not q:
-        return
-    lower = q.lower()
-    if lower in (x for x in GOODBYES) or any(w in lower for w in ["bye","goodbye"]):
-        push_sys("Thanks for chatting—take care!")
-        st.session_state.question_input = ""
-        return
-
-    st.session_state.chat.append(("Student", q, None))
-    ans, src = route_intent(q)
-    push("CASmate", ans, src)
-
-    if not needs_clarification(ans):
-        push_sys("Anything else I can help with?")
-
-    st.session_state.question_input = ""
-
-
-if not st.session_state.asked_name:
-    push_sys(f"{time_greeting()}! I’m CASmate, a chatbot built to assist students of the College of Arts and Sciences with quick course and curriculum questions. What’s your name?")
-    st.session_state.asked_name = True
-
-for sender, msg, src in st.session_state.chat:
-    label = sender if sender != "Student" or not st.session_state.user_name else st.session_state.user_name
-    st.markdown(
-        get_chat_bubble_html(
-            sender if sender != "Student" else (st.session_state.user_name or "Student"),
-            msg, label, source=src),
-        unsafe_allow_html=True,
+# Chat display
+for msg in st.session_state.chat:
+    html = getchatbubblehtml(
+        msg["sender"], 
+        msg["message"], 
+        msg.get("source"),
+        st.session_state.user_name
     )
+    st.markdown(html, unsafe_allow_html=True)
 
-if not st.session_state.user_name:
-    st.text_input("You:", key="name_input", on_change=submit_name)
-else:
-    st.text_input("You:", key="question_input", on_change=submit_question)
+# Input area
+st.markdown('<div class="input-section"><div class="input-label">You:</div></div>', unsafe_allow_html=True)
+prompt = st.chat_input("Ask in English or Tagalog (e.g., 'prereq ng calc 1?', 'courses for CS 1st yr 1st sem')")
 
-st.markdown(get_footer_html(), unsafe_allow_html=True)
+if prompt is not None:
+    user_text = prompt.strip()
+    if user_text:
+        if not st.session_state.asked_name:
+            st.session_state.user_name = user_text
+            st.session_state.asked_name = True
+            add_message("CASmate", f"Nice to meet you, {st.session_state.user_name}. How can I help?")
+        else:
+            add_message(st.session_state.user_name, user_text)
+            reply, source = route_intent(user_text)
+            add_message("CASmate", reply, source=source)
+        st.rerun()
+
+# Footer
+st.markdown(getfooterhtml(), unsafe_allow_html=True)
 
