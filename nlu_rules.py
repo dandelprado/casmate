@@ -98,7 +98,6 @@ def build_gazetteers(programs: List[Dict], courses: List[Dict], synonyms: List[D
 
     def add_lower_in(name: str, words: List[str]):
         matcher.add(name, [[{"LOWER": {"IN": words}}]])
-
     add_lower_in("INTENT_GREET", ["hi", "hello", "hey"])
     add_lower_in("INTENT_GOODBYE", ["bye", "goodbye", "thanks", "thank", "tnx"])
 
@@ -133,6 +132,8 @@ def detect_intent(text: str) -> str:
     doc = nlp(text or "")
     labels = [nlp.vocab.strings[mid] for mid, _, _ in matcher(doc)]
     tlow = (text or "").lower().strip()
+    if "dean" in tlow:
+        return "dept_head_one"
     if "heads" in tlow or "leadership" in tlow:
         return "dept_heads_list"
     if "INTENT_DEPT_HEADS_LIST" in labels or tlow in {"department heads", "dept heads", "dept. heads", "different department heads"}:

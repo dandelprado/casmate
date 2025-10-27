@@ -285,3 +285,6 @@ def get_dept_role_label(dept_row: Dict, user_text: str) -> str:
         return "Dean"
     return "Department head"
 
+def get_cas_dean(departments: List[Dict]) -> Optional[Dict]:
+    return next((d for d in departments if (d.get("dean_flag") or "N").upper() == "Y"), None)
+
