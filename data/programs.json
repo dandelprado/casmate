@@ -1,0 +1,32 @@
+[
+  {
+    "program_id": "P-CS",
+    "program_name": "BS in Computer Science",
+    "department_id": "D-CS"
+  },
+  {
+    "program_id": "P-PSY",
+    "program_name": "BS in Psychology",
+    "department_id": "D-SS"
+  },
+  {
+    "program_id": "P-POLS",
+    "program_name": "BA in Political Science",
+    "department_id": "D-SS"
+  },
+  {
+    "program_id": "P-BIO",
+    "program_name": "BS in Biology",
+    "department_id": "D-NS"
+  },
+  {
+    "program_id": "P-ENG",
+    "program_name": "BA in English Language",
+    "department_id": "D-LL"
+  },
+  {
+    "program_id": "P-COMM",
+    "program_name": "BA in Communications",
+    "department_id": "D-LL"
+  }
+]

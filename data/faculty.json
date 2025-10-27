@@ -1,0 +1,38 @@
+[
+  {
+    "faculty_id": "F-001",
+    "full_name": "DR. YSL",
+    "title": "Dean",
+    "department_id": "D-CAS"
+  },
+  {
+    "faculty_id": "F-101",
+    "full_name": "DR. PV",
+    "title": "Department Head",
+    "department_id": "D-SS"
+  },
+  {
+    "faculty_id": "F-201",
+    "full_name": "PROF. RC",
+    "title": "Department Head",
+    "department_id": "D-CS"
+  },
+  {
+    "faculty_id": "F-301",
+    "full_name": "DR. JV",
+    "title": "Department Head",
+    "department_id": "D-LL"
+  },
+  {
+    "faculty_id": "F-401",
+    "full_name": "PROF. RP",
+    "title": "Department Head",
+    "department_id": "D-NS"
+  },
+  {
+    "faculty_id": "F-501",
+    "full_name": "DR. NL",
+    "title": "Department Head",
+    "department_id": "D-MATH"
+  }
+]

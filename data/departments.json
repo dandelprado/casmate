@@ -1,0 +1,38 @@
+[
+  {
+    "department_id": "D-CAS",
+    "department_name": "CAS Dean",
+    "department_head": "DR. YSL",
+    "dean_flag": "Y"
+  },
+  {
+    "department_id": "D-SS",
+    "department_name": "Social Sciences",
+    "department_head": "DR. PV",
+    "dean_flag": "N"
+  },
+  {
+    "department_id": "D-CS",
+    "department_name": "Computer Science",
+    "department_head": "PROF. RC",
+    "dean_flag": "N"
+  },
+  {
+    "department_id": "D-LL",
+    "department_name": "Language and Literature",
+    "department_head": "DR. JV",
+    "dean_flag": "N"
+  },
+  {
+    "department_id": "D-NS",
+    "department_name": "Natural Sciences",
+    "department_head": "PROF. RP",
+    "dean_flag": "N"
+  },
+  {
+    "department_id": "D-MATH",
+    "department_name": "Mathematics",
+    "department_head": "DR. NL",
+    "dean_flag": "N"
+  }
+]

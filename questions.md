@@ -7,3 +7,9 @@
 - There is no entrance exam. We have diagnostic for English and Math. 
 
 4. 
+
+---
+
+1. Who is the department head? Department heads? 
+
+Already addressing basic typographical errors. 

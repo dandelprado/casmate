@@ -1,44 +1,45 @@
-:root {
-  --bg: #0c1726;
-  --fg: #E6E9EF;
+:root{
+  --bg:#0c1726;
+  --fg:#E6E9EF;
+  --card:#1a2332;
+  --line:#2d3748;
+  --accent1:#5b9cf6;
+  --accent2:#8b5cf6;
+  --accent3:#06b6d4;
 }
 
-.stApp {
-  background: var(--bg) !important;
-  color: var(--fg) !important;
+.stApp{background:var(--bg)!important;color:var(--fg)!important;}
+#MainMenu,footer,header{visibility:hidden!important;display:none!important;}
+
+.main .block-container{
+  padding:1.5rem 1rem 140px 1rem!important;
+  max-width:900px!important;
 }
 
-#MainMenu, footer, header {
-  visibility: hidden !important;
-  display: none !important;
+input[type="text"],.stChatInput input{
+  color:var(--fg)!important;background:var(--card)!important;border:1px solid var(--line)!important;border-radius:10px!important;
+}
+input[type="text"]:focus,.stChatInput input:focus{
+  border-color:#4a5568!important;outline:none!important;box-shadow:0 0 0 2px rgba(66,153,225,.15)!important;
+}
+.stChatInput{z-index:10000!important;position:relative!important;}
+
+.hero{
+  background:linear-gradient(135deg,rgba(91,156,246,.12),rgba(139,92,246,.12) 50%,rgba(6,182,212,.12));
+  border:1px solid rgba(255,255,255,.06);
+  border-radius:16px;
+  padding:16px 18px;
+  margin-bottom:12px;
+  box-shadow:0 6px 18px rgba(0,0,0,.25);
+}
+.hero-title{
+  margin:0;
+  font-size:1.65rem;
+  font-weight:800;
+  letter-spacing:.3px;
+}
+.gradient-text{
+  background:linear-gradient(90deg,var(--accent1),var(--accent2) 40%,var(--accent3));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
 }
 
-.main .block-container {
-  padding: 1.5rem 1rem 140px 1rem !important;
-  max-width: 850px !important;
-}
-
-h1 {
-  color: var(--fg) !important;
-  font-size: 1.6rem !important;
-  margin-bottom: 1.5rem !important;
-  font-weight: 600 !important;
-}
-
-input[type="text"], .stChatInput input {
-  color: var(--fg) !important;
-  background: #1a2332 !important;
-  border: 1px solid #2d3748 !important;
-  border-radius: 8px !important;
-}
-
-input[type="text"]:focus, .stChatInput input:focus {
-  border-color: #4a5568 !important;
-  outline: none !important;
-  box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.15) !important;
-}
-
-.stChatInput {
-  z-index: 10000 !important;
-  position: relative !important;
-}

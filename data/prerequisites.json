@@ -1,0 +1,82 @@
+[
+  {
+    "course_id": "CS-002",
+    "prerequisite_course_id": "CS-001"
+  },
+  {
+    "course_id": "CS-003",
+    "prerequisite_course_id": "MATH-001"
+  },
+  {
+    "course_id": "CS-004",
+    "prerequisite_course_id": "CS-001"
+  },
+  {
+    "course_id": "CS-005",
+    "prerequisite_course_id": "CS-002"
+  },
+  {
+    "course_id": "PSY-002",
+    "prerequisite_course_id": "PSY-001"
+  },
+  {
+    "course_id": "PSY-003",
+    "prerequisite_course_id": "PSY-001"
+  },
+  {
+    "course_id": "PSY-004",
+    "prerequisite_course_id": "PSY-002"
+  },
+  {
+    "course_id": "POLS-002",
+    "prerequisite_course_id": "POLS-001"
+  },
+  {
+    "course_id": "POLS-003",
+    "prerequisite_course_id": "POLS-001"
+  },
+  {
+    "course_id": "BIO-002",
+    "prerequisite_course_id": "BIO-001"
+  },
+  {
+    "course_id": "BIO-003",
+    "prerequisite_course_id": "BIO-002"
+  },
+  {
+    "course_id": "ENG-002",
+    "prerequisite_course_id": "ENG-001"
+  },
+  {
+    "course_id": "ENG-003",
+    "prerequisite_course_id": "ENG-002"
+  },
+  {
+    "course_id": "COMM-002",
+    "prerequisite_course_id": "COMM-001"
+  },
+  {
+    "course_id": "COMM-003",
+    "prerequisite_course_id": "COMM-001"
+  },
+  {
+    "course_id": "MATH-002",
+    "prerequisite_course_id": "MATH-001"
+  },
+  {
+    "course_id": "MATH-003",
+    "prerequisite_course_id": "MATH-002"
+  },
+  {
+    "course_id": "STAT-002",
+    "prerequisite_course_id": "STAT-001"
+  },
+  {
+    "course_id": "STAT-002",
+    "prerequisite_course_id": "MATH-001"
+  },
+  {
+    "course_id": "CS-005",
+    "prerequisite_course_id": "CS-003"
+  }
+]

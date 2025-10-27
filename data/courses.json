@@ -1,0 +1,210 @@
+[
+  {
+    "course_id": "CS-001",
+    "course_code": "CS101",
+    "course_title": "Introduction to Computer Science",
+    "program_id": "P-CS",
+    "department_id": "D-CS",
+    "units": "3"
+  },
+  {
+    "course_id": "CS-002",
+    "course_code": "CS102",
+    "course_title": "Data Structures and Algorithms",
+    "program_id": "P-CS",
+    "department_id": "D-CS",
+    "units": "3"
+  },
+  {
+    "course_id": "CS-003",
+    "course_code": "CS201",
+    "course_title": "Discrete Mathematics",
+    "program_id": "P-CS",
+    "department_id": "D-CS",
+    "units": "3"
+  },
+  {
+    "course_id": "CS-004",
+    "course_code": "CS202",
+    "course_title": "Computer Architecture",
+    "program_id": "P-CS",
+    "department_id": "D-CS",
+    "units": "3"
+  },
+  {
+    "course_id": "CS-005",
+    "course_code": "CS301",
+    "course_title": "Database Systems",
+    "program_id": "P-CS",
+    "department_id": "D-CS",
+    "units": "3"
+  },
+  {
+    "course_id": "PSY-001",
+    "course_code": "PSY101",
+    "course_title": "Introduction to Psychology",
+    "program_id": "P-PSY",
+    "department_id": "D-SS",
+    "units": "3"
+  },
+  {
+    "course_id": "PSY-002",
+    "course_code": "PSY102",
+    "course_title": "Developmental Psychology",
+    "program_id": "P-PSY",
+    "department_id": "D-SS",
+    "units": "3"
+  },
+  {
+    "course_id": "PSY-003",
+    "course_code": "PSY201",
+    "course_title": "Cognitive Psychology",
+    "program_id": "P-PSY",
+    "department_id": "D-SS",
+    "units": "3"
+  },
+  {
+    "course_id": "PSY-004",
+    "course_code": "PSY202",
+    "course_title": "Abnormal Psychology",
+    "program_id": "P-PSY",
+    "department_id": "D-SS",
+    "units": "3"
+  },
+  {
+    "course_id": "POLS-001",
+    "course_code": "POLS101",
+    "course_title": "Introduction to Political Science",
+    "program_id": "P-POLS",
+    "department_id": "D-SS",
+    "units": "3"
+  },
+  {
+    "course_id": "POLS-002",
+    "course_code": "POLS201",
+    "course_title": "Comparative Politics",
+    "program_id": "P-POLS",
+    "department_id": "D-SS",
+    "units": "3"
+  },
+  {
+    "course_id": "POLS-003",
+    "course_code": "POLS202",
+    "course_title": "International Relations",
+    "program_id": "P-POLS",
+    "department_id": "D-SS",
+    "units": "3"
+  },
+  {
+    "course_id": "BIO-001",
+    "course_code": "BIO101",
+    "course_title": "General Biology",
+    "program_id": "P-BIO",
+    "department_id": "D-NS",
+    "units": "3"
+  },
+  {
+    "course_id": "BIO-002",
+    "course_code": "BIO102",
+    "course_title": "Cell Biology",
+    "program_id": "P-BIO",
+    "department_id": "D-NS",
+    "units": "3"
+  },
+  {
+    "course_id": "BIO-003",
+    "course_code": "BIO201",
+    "course_title": "Genetics",
+    "program_id": "P-BIO",
+    "department_id": "D-NS",
+    "units": "3"
+  },
+  {
+    "course_id": "ENG-001",
+    "course_code": "ENG101",
+    "course_title": "Academic Writing",
+    "program_id": "P-ENG",
+    "department_id": "D-LL",
+    "units": "3"
+  },
+  {
+    "course_id": "ENG-002",
+    "course_code": "ENG102",
+    "course_title": "English Composition",
+    "program_id": "P-ENG",
+    "department_id": "D-LL",
+    "units": "3"
+  },
+  {
+    "course_id": "ENG-003",
+    "course_code": "ENG201",
+    "course_title": "British Literature",
+    "program_id": "P-ENG",
+    "department_id": "D-LL",
+    "units": "3"
+  },
+  {
+    "course_id": "COMM-001",
+    "course_code": "COMM101",
+    "course_title": "Introduction to Communication",
+    "program_id": "P-COMM",
+    "department_id": "D-LL",
+    "units": "3"
+  },
+  {
+    "course_id": "COMM-002",
+    "course_code": "COMM102",
+    "course_title": "Public Speaking",
+    "program_id": "P-COMM",
+    "department_id": "D-LL",
+    "units": "3"
+  },
+  {
+    "course_id": "COMM-003",
+    "course_code": "COMM201",
+    "course_title": "Media and Society",
+    "program_id": "P-COMM",
+    "department_id": "D-LL",
+    "units": "3"
+  },
+  {
+    "course_id": "MATH-001",
+    "course_code": "MATH101",
+    "course_title": "College Algebra",
+    "program_id": "",
+    "department_id": "D-MATH",
+    "units": "3"
+  },
+  {
+    "course_id": "MATH-002",
+    "course_code": "MATH102",
+    "course_title": "Calculus I",
+    "program_id": "",
+    "department_id": "D-MATH",
+    "units": "4"
+  },
+  {
+    "course_id": "MATH-003",
+    "course_code": "MATH201",
+    "course_title": "Calculus II",
+    "program_id": "",
+    "department_id": "D-MATH",
+    "units": "4"
+  },
+  {
+    "course_id": "STAT-001",
+    "course_code": "STAT101",
+    "course_title": "Introduction to Statistics",
+    "program_id": "",
+    "department_id": "D-MATH",
+    "units": "3"
+  },
+  {
+    "course_id": "STAT-002",
+    "course_code": "STAT201",
+    "course_title": "Probability Theory",
+    "program_id": "",
+    "department_id": "D-MATH",
+    "units": "3"
+  }
+]

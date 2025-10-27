@@ -1,0 +1,142 @@
+[
+  {
+    "plan_id": "PL-CS-1-1-001",
+    "program_id": "P-CS",
+    "year_level": "1",
+    "semester": "1",
+    "course_id": "CS-001"
+  },
+  {
+    "plan_id": "PL-CS-1-1-002",
+    "program_id": "P-CS",
+    "year_level": "1",
+    "semester": "1",
+    "course_id": "ENG-001"
+  },
+  {
+    "plan_id": "PL-CS-1-1-003",
+    "program_id": "P-CS",
+    "year_level": "1",
+    "semester": "1",
+    "course_id": "MATH-001"
+  },
+  {
+    "plan_id": "PL-CS-1-2-001",
+    "program_id": "P-CS",
+    "year_level": "1",
+    "semester": "2",
+    "course_id": "CS-002"
+  },
+  {
+    "plan_id": "PL-CS-1-2-002",
+    "program_id": "P-CS",
+    "year_level": "1",
+    "semester": "2",
+    "course_id": "CS-003"
+  },
+  {
+    "plan_id": "PL-CS-1-2-003",
+    "program_id": "P-CS",
+    "year_level": "1",
+    "semester": "2",
+    "course_id": "STAT-001"
+  },
+  {
+    "plan_id": "PL-CS-1-3-001",
+    "program_id": "P-CS",
+    "year_level": "1",
+    "semester": "3",
+    "course_id": "COMM-001"
+  },
+  {
+    "plan_id": "PL-CS-1-3-002",
+    "program_id": "P-CS",
+    "year_level": "1",
+    "semester": "3",
+    "course_id": "STAT-002"
+  },
+  {
+    "plan_id": "PL-CS-1-3-003",
+    "program_id": "P-CS",
+    "year_level": "1",
+    "semester": "3",
+    "course_id": "MATH-002"
+  },
+  {
+    "plan_id": "PL-CS-2-1-001",
+    "program_id": "P-CS",
+    "year_level": "2",
+    "semester": "1",
+    "course_id": "CS-005"
+  },
+  {
+    "plan_id": "PL-CS-2-1-002",
+    "program_id": "P-CS",
+    "year_level": "2",
+    "semester": "1",
+    "course_id": "STAT-001"
+  },
+  {
+    "plan_id": "PL-PSY-1-1-001",
+    "program_id": "P-PSY",
+    "year_level": "1",
+    "semester": "1",
+    "course_id": "PSY-001"
+  },
+  {
+    "plan_id": "PL-PSY-1-1-002",
+    "program_id": "P-PSY",
+    "year_level": "1",
+    "semester": "1",
+    "course_id": "MATH-001"
+  },
+  {
+    "plan_id": "PL-PSY-1-2-001",
+    "program_id": "P-PSY",
+    "year_level": "1",
+    "semester": "2",
+    "course_id": "PSY-002"
+  },
+  {
+    "plan_id": "PL-POLS-1-1-001",
+    "program_id": "P-POLS",
+    "year_level": "1",
+    "semester": "1",
+    "course_id": "POLS-001"
+  },
+  {
+    "plan_id": "PL-POLS-1-2-001",
+    "program_id": "P-POLS",
+    "year_level": "1",
+    "semester": "2",
+    "course_id": "POLS-002"
+  },
+  {
+    "plan_id": "PL-BIO-1-1-001",
+    "program_id": "P-BIO",
+    "year_level": "1",
+    "semester": "1",
+    "course_id": "BIO-001"
+  },
+  {
+    "plan_id": "PL-BIO-1-2-001",
+    "program_id": "P-BIO",
+    "year_level": "1",
+    "semester": "2",
+    "course_id": "BIO-002"
+  },
+  {
+    "plan_id": "PL-ENG-1-1-001",
+    "program_id": "P-ENG",
+    "year_level": "1",
+    "semester": "1",
+    "course_id": "ENG-001"
+  },
+  {
+    "plan_id": "PL-COMM-1-1-001",
+    "program_id": "P-COMM",
+    "year_level": "1",
+    "semester": "1",
+    "course_id": "COMM-001"
+  }
+]

@@ -1,0 +1,106 @@
+[
+  {
+    "alias": "Intro to Psych",
+    "course_id": "PSY-001"
+  },
+  {
+    "alias": "Data Structures",
+    "course_id": "CS-002"
+  },
+  {
+    "alias": "data struct",
+    "course_id": "CS-002"
+  },
+  {
+    "alias": "datastruct",
+    "course_id": "CS-002"
+  },
+  {
+    "alias": "data structure",
+    "course_id": "CS-002"
+  },
+  {
+    "alias": "DS",
+    "course_id": "CS-002"
+  },
+  {
+    "alias": "DSA",
+    "course_id": "CS-002"
+  },
+  {
+    "alias": "Academic Writing",
+    "course_id": "ENG-001"
+  },
+  {
+    "alias": "Intro to Comm",
+    "course_id": "COMM-001"
+  },
+  {
+    "alias": "College Algebra",
+    "course_id": "MATH-001"
+  },
+  {
+    "alias": "Calculus 1",
+    "course_id": "MATH-002"
+  },
+  {
+    "alias": "calc 1",
+    "course_id": "MATH-002"
+  },
+  {
+    "alias": "cal 1",
+    "course_id": "MATH-002"
+  },
+  {
+    "alias": "Calc I",
+    "course_id": "MATH-002"
+  },
+  {
+    "alias": "Intro to CS",
+    "course_id": "CS-001"
+  },
+  {
+    "alias": "Comp Sci 101",
+    "course_id": "CS-001"
+  },
+  {
+    "alias": "Intro Psych",
+    "course_id": "PSY-001"
+  },
+  {
+    "alias": "Psych 101",
+    "course_id": "PSY-001"
+  },
+  {
+    "alias": "Dev Psych",
+    "course_id": "PSY-002"
+  },
+  {
+    "alias": "General Bio",
+    "course_id": "BIO-001"
+  },
+  {
+    "alias": "Bio 101",
+    "course_id": "BIO-001"
+  },
+  {
+    "alias": "Cell Bio",
+    "course_id": "BIO-002"
+  },
+  {
+    "alias": "Discrete Math",
+    "course_id": "CS-003"
+  },
+  {
+    "alias": "Stats",
+    "course_id": "STAT-001"
+  },
+  {
+    "alias": "Intro Stats",
+    "course_id": "STAT-001"
+  },
+  {
+    "alias": "Public Speech",
+    "course_id": "COMM-002"
+  }
+]
