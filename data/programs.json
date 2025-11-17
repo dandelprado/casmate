@@ -1,32 +1,33 @@
 [
   {
-    "program_id": "P-CS",
-    "program_name": "BS in Computer Science",
-    "department_id": "D-CS"
-  },
-  {
-    "program_id": "P-PSY",
-    "program_name": "BS in Psychology",
-    "department_id": "D-SS"
+    "program_id": "P-COMM",
+    "program_name": "Bachelor of Arts in Communication",
+    "short_name": "BA Communication",
+    "department_id": "D-LL"
   },
   {
     "program_id": "P-POLS",
-    "program_name": "BA in Political Science",
+    "program_name": "Bachelor of Arts in Political Science",
+    "short_name": "BA Political Science",
+    "department_id": "D-SS"
+  },
+  {
+    "program_id": "P-PSY",
+    "program_name": "Bachelor of Science in Psychology",
+    "short_name": "BS Psychology",
     "department_id": "D-SS"
   },
   {
     "program_id": "P-BIO",
-    "program_name": "BS in Biology",
+    "program_name": "Bachelor of Science in Biology",
+    "short_name": "BS Biology",
     "department_id": "D-NS"
   },
   {
-    "program_id": "P-ENG",
-    "program_name": "BA in English Language",
-    "department_id": "D-LL"
-  },
-  {
-    "program_id": "P-COMM",
-    "program_name": "BA in Communications",
-    "department_id": "D-LL"
+    "program_id": "P-CS",
+    "program_name": "Bachelor of Science in Computer Science",
+    "short_name": "BS Computer Science",
+    "department_id": "D-CS"
   }
 ]
+

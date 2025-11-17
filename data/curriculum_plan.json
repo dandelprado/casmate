@@ -1,142 +1,610 @@
 [
   {
-    "plan_id": "PL-CS-1-1-001",
-    "program_id": "P-CS",
-    "year_level": "1",
-    "semester": "1",
-    "course_id": "CS-001"
-  },
-  {
-    "plan_id": "PL-CS-1-1-002",
-    "program_id": "P-CS",
-    "year_level": "1",
-    "semester": "1",
-    "course_id": "ENG-001"
-  },
-  {
-    "plan_id": "PL-CS-1-1-003",
-    "program_id": "P-CS",
-    "year_level": "1",
-    "semester": "1",
-    "course_id": "MATH-001"
-  },
-  {
-    "plan_id": "PL-CS-1-2-001",
-    "program_id": "P-CS",
-    "year_level": "1",
-    "semester": "2",
-    "course_id": "CS-002"
-  },
-  {
-    "plan_id": "PL-CS-1-2-002",
-    "program_id": "P-CS",
-    "year_level": "1",
-    "semester": "2",
-    "course_id": "CS-003"
-  },
-  {
-    "plan_id": "PL-CS-1-2-003",
-    "program_id": "P-CS",
-    "year_level": "1",
-    "semester": "2",
-    "course_id": "STAT-001"
-  },
-  {
-    "plan_id": "PL-CS-1-3-001",
-    "program_id": "P-CS",
-    "year_level": "1",
-    "semester": "3",
-    "course_id": "COMM-001"
-  },
-  {
-    "plan_id": "PL-CS-1-3-002",
-    "program_id": "P-CS",
-    "year_level": "1",
-    "semester": "3",
-    "course_id": "STAT-002"
-  },
-  {
-    "plan_id": "PL-CS-1-3-003",
-    "program_id": "P-CS",
-    "year_level": "1",
-    "semester": "3",
-    "course_id": "MATH-002"
-  },
-  {
-    "plan_id": "PL-CS-2-1-001",
-    "program_id": "P-CS",
-    "year_level": "2",
-    "semester": "1",
-    "course_id": "CS-005"
-  },
-  {
-    "plan_id": "PL-CS-2-1-002",
-    "program_id": "P-CS",
-    "year_level": "2",
-    "semester": "1",
-    "course_id": "STAT-001"
-  },
-  {
-    "plan_id": "PL-PSY-1-1-001",
-    "program_id": "P-PSY",
-    "year_level": "1",
-    "semester": "1",
-    "course_id": "PSY-001"
-  },
-  {
-    "plan_id": "PL-PSY-1-1-002",
-    "program_id": "P-PSY",
-    "year_level": "1",
-    "semester": "1",
-    "course_id": "MATH-001"
-  },
-  {
-    "plan_id": "PL-PSY-1-2-001",
-    "program_id": "P-PSY",
-    "year_level": "1",
-    "semester": "2",
-    "course_id": "PSY-002"
-  },
-  {
-    "plan_id": "PL-POLS-1-1-001",
-    "program_id": "P-POLS",
-    "year_level": "1",
-    "semester": "1",
-    "course_id": "POLS-001"
-  },
-  {
-    "plan_id": "PL-POLS-1-2-001",
-    "program_id": "P-POLS",
-    "year_level": "1",
-    "semester": "2",
-    "course_id": "POLS-002"
-  },
-  {
-    "plan_id": "PL-BIO-1-1-001",
-    "program_id": "P-BIO",
-    "year_level": "1",
-    "semester": "1",
-    "course_id": "BIO-001"
-  },
-  {
-    "plan_id": "PL-BIO-1-2-001",
-    "program_id": "P-BIO",
-    "year_level": "1",
-    "semester": "2",
-    "course_id": "BIO-002"
-  },
-  {
-    "plan_id": "PL-ENG-1-1-001",
-    "program_id": "P-ENG",
-    "year_level": "1",
-    "semester": "1",
-    "course_id": "ENG-001"
-  },
-  {
-    "plan_id": "PL-COMM-1-1-001",
     "program_id": "P-COMM",
-    "year_level": "1",
-    "semester": "1",
-    "course_id": "COMM-001"
+    "program_name": "Bachelor of Arts in Communication",
+    "terms": [
+      {
+        "year_level": 1,
+        "term": 1,
+        "term_name": "First Year, First Trimester",
+        "courses": [
+          "CC COM 1",
+          "RPH",
+          "LTE L/L",
+          "PATHFIT 1",
+          "NSTP 1",
+          "IMAT",
+          "IENG",
+          "IEUTH 1"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 2,
+        "term_name": "First Year, Second Trimester",
+        "courses": [
+          "CR COM 1",
+          "PCOM",
+          "MMW",
+          "UTS",
+          "PATHFIT 2",
+          "NSTP 2",
+          "IEUTH 2"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 3,
+        "term_name": "First Year, Third Trimester",
+        "courses": [
+          "CC COM 2",
+          "RC COM 1",
+          "CR COM 2",
+          "C ELE 1",
+          "ART",
+          "ENT",
+          "PATHFIT 3"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 1,
+        "term_name": "Second Year, First Trimester",
+        "courses": [
+          "RC COM 2",
+          "RC COM 3",
+          "SS ELE 1",
+          "SS ELE 2",
+          "LWR",
+          "IMM L",
+          "PATHFIT 4"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 2,
+        "term_name": "Second Year, Second Trimester",
+        "courses": [
+          "CC COM 3",
+          "C ELE 2",
+          "C ELE 3",
+          "SS ELE 3",
+          "ETH",
+          "STS"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 3,
+        "term_name": "Second Year, Third Trimester",
+        "courses": [
+          "CR COM 3",
+          "CC COM 4",
+          "CC COM 5",
+          "TCW",
+          "LIT",
+          "ENVS"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 1,
+        "term_name": "Third Year, First Trimester",
+        "courses": [
+          "C ELE 4",
+          "RC COM 4",
+          "CC COM 6",
+          "SS ELE 4",
+          "TH/SP 1"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 2,
+        "term_name": "Third Year, Second Trimester",
+        "courses": [
+          "CC COM 7",
+          "CR COM 3",
+          "TH/SP 2",
+          "SS ELE 5"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 3,
+        "term_name": "Third Year, Third Trimester",
+        "courses": [
+          "COM 1"
+        ]
+      }
+    ]
+  },
+  {
+    "program_id": "P-POLS",
+    "program_name": "Bachelor of Arts in Political Science",
+    "terms": [
+      {
+        "year_level": 1,
+        "term": 1,
+        "term_name": "First Year, First Trimester",
+        "courses": [
+          "PS 101",
+          "RPH",
+          "LTE L/L",
+          "IENG",
+          "IMAT",
+          "NSTP 1",
+          "PATHFIT 1",
+          "IEUTH 1"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 2,
+        "term_name": "First Year, Second Trimester",
+        "courses": [
+          "PS 102",
+          "UTS",
+          "PCOM",
+          "MMW",
+          "IEUTH 2",
+          "PATHFIT 2",
+          "NSTP 2",
+          "PS ELEF 1"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 3,
+        "term_name": "First Year, Third Trimester",
+        "courses": [
+          "PS 104",
+          "PS ELE 1",
+          "PS ELEF 2",
+          "ART",
+          "ENT",
+          "PATHFIT 3"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 1,
+        "term_name": "Second Year, First Trimester",
+        "courses": [
+          "PS 108",
+          "PS ELE 2",
+          "PS 105",
+          "LWR",
+          "FUT",
+          "IMM L",
+          "PATHFIT 4"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 2,
+        "term_name": "Second Year, Second Trimester",
+        "courses": [
+          "PS ELE 4",
+          "PS 109",
+          "PS ELE 3",
+          "PS ELE 6",
+          "ETH",
+          "STS"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 3,
+        "term_name": "Second Year, Third Trimester",
+        "courses": [
+          "PS 103",
+          "PS 107",
+          "PS ELE 7",
+          "TCW",
+          "LIT",
+          "ENVS"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 1,
+        "term_name": "Third Year, First Trimester",
+        "courses": [
+          "PS 106",
+          "PS ELE 8",
+          "PS ELEF 3",
+          "PS ELE 9",
+          "PS ELE 5",
+          "PS ELE 10"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 2,
+        "term_name": "Third Year, Second Trimester",
+        "courses": [
+          "PS ELEF 4",
+          "PS 110",
+          "PS ELE 11",
+          "PS 111",
+          "PS ELE 12"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 3,
+        "term_name": "Third Year, Third Trimester",
+        "courses": [
+          "PS 112"
+        ]
+      }
+    ]
+  },
+  {
+    "program_id": "P-PSY",
+    "program_name": "Bachelor of Science in Psychology",
+    "terms": [
+      {
+        "year_level": 1,
+        "term": 1,
+        "term_name": "First Year, First Trimester",
+        "courses": [
+          "PSYCH 101",
+          "RPH",
+          "LTE L/L",
+          "IENG",
+          "IMAT",
+          "NSTP 1",
+          "PATHFIT 1",
+          "IEUTH 1"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 2,
+        "term_name": "First Year, Second Trimester",
+        "courses": [
+          "UTS",
+          "PCOM",
+          "MMW",
+          "IEUTH 2",
+          "PATHFIT 2",
+          "NSTP 2",
+          "PSYCH 102 L/L",
+          "NS ELE 1"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 3,
+        "term_name": "First Year, Third Trimester",
+        "courses": [
+          "PSYCH 103",
+          "PSYCH 104",
+          "NS ELE 2",
+          "PSYCH 107",
+          "ART",
+          "ENT",
+          "PATHFIT 3"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 1,
+        "term_name": "Second Year, First Trimester",
+        "courses": [
+          "PSYCH 105 L/L",
+          "PSYCH 113",
+          "PSYCH ELE 5",
+          "LWR",
+          "FUT",
+          "IMM L",
+          "PATHFIT 4"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 2,
+        "term_name": "Second Year, Second Trimester",
+        "courses": [
+          "PSYCH 111",
+          "PSYCH 108",
+          "NS ELE 3 L/L",
+          "PSYCH ELE 3",
+          "ETH",
+          "STS"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 3,
+        "term_name": "Second Year, Third Trimester",
+        "courses": [
+          "NS ELE 4 L/L",
+          "PSYCH 109",
+          "PSYCH 106 L/L",
+          "TCW",
+          "LIT",
+          "ENVS"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 1,
+        "term_name": "Third Year, First Trimester",
+        "courses": [
+          "PSYCH 110",
+          "PSYCH ELE 4",
+          "PSYCH 112",
+          "NS ELE 5 L/L"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 2,
+        "term_name": "Third Year, Second Trimester",
+        "courses": [
+          "PSYCH 114 L/L",
+          "PSYCH 115",
+          "PSYCH ELE 1"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 3,
+        "term_name": "Third Year, Third Trimester",
+        "courses": [
+          "PSYCH PRAC"
+        ]
+      }
+    ]
+  },
+  {
+    "program_id": "P-BIO",
+    "program_name": "Bachelor of Science in Biology",
+    "terms": [
+      {
+        "year_level": 1,
+        "term": 1,
+        "term_name": "First Year, First Semester",
+        "courses": [
+          "ZOO 101 L/L",
+          "LTE L/L",
+          "RPH",
+          "IENG",
+          "IMAT",
+          "PATHFIT 1",
+          "NSTP 1",
+          "IEUTH 1"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 2,
+        "term_name": "First Year, Second Trimester",
+        "courses": [
+          "PCOM",
+          "MMW",
+          "UTS",
+          "BOT 101 L/L",
+          "CHE 101 L/L",
+          "PATHFIT 2",
+          "NSTP 2",
+          "IEUTH 2"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 3,
+        "term_name": "First Year, Third Trimester",
+        "courses": [
+          "BIO 101 L/L",
+          "ART",
+          "ENT",
+          "BIO 102 L/L",
+          "CHE 102 L/L",
+          "PATHFIT 3"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 1,
+        "term_name": "Second Year, First Trimester",
+        "courses": [
+          "FUT",
+          "LWR",
+          "IMM L",
+          "BIO 103 L/L",
+          "BIO 104 L/L",
+          "CHE 103 L/L",
+          "PATHFIT 4"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 2,
+        "term_name": "Second Year, Second Trimester",
+        "courses": [
+          "BIO 105 L/L",
+          "ETH",
+          "STS",
+          "STA 101 L/L",
+          "BIO 106 L/L",
+          "BOT 102 L/L"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 3,
+        "term_name": "Second Year, Third Trimester",
+        "courses": [
+          "LIT",
+          "BIO 107 L/L",
+          "TCW",
+          "PHY 101 L/L",
+          "SED 121",
+          "THE 101"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 1,
+        "term_name": "Third Year, First Trimester",
+        "courses": [
+          "MED 102 L/L",
+          "BIO 108 L/L",
+          "MED 101 L/L",
+          "THE 102"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 2,
+        "term_name": "Third Year, Second Trimester",
+        "courses": [
+          "THE 103",
+          "BIO 110 L/L",
+          "BIO 109 L/L"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 3,
+        "term_name": "Third Year, Third Trimester",
+        "courses": [
+          "PRAC 101"
+        ]
+      }
+    ]
+  },
+  {
+    "program_id": "P-CS",
+    "program_name": "Bachelor of Science in Computer Science",
+    "terms": [
+      {
+        "year_level": 1,
+        "term": 1,
+        "term_name": "First Year, First Trimester",
+        "courses": [
+          "CC 111 L/L",
+          "CC 112 L/L",
+          "RPH",
+          "PATHFIT 1",
+          "NSTP 1",
+          "IENG",
+          "IMAT",
+          "IEUTH 1"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 2,
+        "term_name": "First Year, Second Trimester",
+        "courses": [
+          "CC 123 L/L",
+          "CS 121",
+          "CS 122 L/L",
+          "PCOM",
+          "MMW",
+          "UTS",
+          "PATHFIT 2",
+          "NSTP 2",
+          "IEUTH 2"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 3,
+        "term_name": "First Year, Third Trimester",
+        "courses": [
+          "CC 134 L/L",
+          "CC 135 L/L",
+          "CC 131",
+          "CS 132 L/L",
+          "MATH 131",
+          "ART",
+          "ENT",
+          "PATHFIT 3"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 1,
+        "term_name": "Second Year, First Trimester",
+        "courses": [
+          "CS 211 L/L",
+          "CS 212 L/L",
+          "MATH 212",
+          "LWR",
+          "FUT",
+          "PATHFIT 4",
+          "IMML"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 2,
+        "term_name": "Second Year, Second Trimester",
+        "courses": [
+          "CS 221",
+          "CS 222",
+          "CS 223 L/L",
+          "MATH 223",
+          "ETH",
+          "STS"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 3,
+        "term_name": "Second Year, Third Trimester",
+        "courses": [
+          "CS 231 L/L",
+          "CS 232 L/L",
+          "CS ELE 1 L/L",
+          "CS FREL 1",
+          "TCW",
+          "LIT",
+          "ENVS"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 1,
+        "term_name": "Third Year, First Trimester",
+        "courses": [
+          "CS 311",
+          "CS 312",
+          "CS 313 L/L",
+          "CS 314 L/L",
+          "CS ELE 2 L/L",
+          "CS FREL 2"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 2,
+        "term_name": "Third Year, Second Trimester",
+        "courses": [
+          "CS THS 1",
+          "CSC 326 L/L",
+          "CS 321",
+          "CS 322 L/L",
+          "CS ELE 3 L/L",
+          "CS FREL 3"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 3,
+        "term_name": "Third Year, Third Trimester",
+        "courses": [
+          "CS THS 2",
+          "CS PRC"
+        ]
+      }
+    ]
   }
 ]
+

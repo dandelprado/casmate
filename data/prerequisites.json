@@ -1,82 +1,132 @@
 [
+  { "course_code": "PCOM", "prerequisite_course_code": "IENG", "type": "course" },
+  { "course_code": "MMW", "prerequisite_course_code": "IMAT", "type": "course" },
+  { "course_code": "PATHFIT 2", "prerequisite_course_code": "PATHFIT 1", "type": "course" },
+  { "course_code": "PATHFIT 3", "prerequisite_course_code": "PATHFIT 2", "type": "course" },
+  { "course_code": "PATHFIT 4", "prerequisite_course_code": "PATHFIT 2", "type": "course" },
+  { "course_code": "NSTP 2", "prerequisite_course_code": "NSTP 1", "type": "course" },
+  { "course_code": "IEUTH 2", "prerequisite_course_code": "IEUTH 1", "type": "course" },
+
+  { "course_code": "IMM L", "prerequisite_course_code": "LTE L/L", "type": "course" },
+  { "course_code": "C ELE 2", "prerequisite_course_code": "LTE L/L", "type": "course" },
+  { "course_code": "C ELE 4", "prerequisite_course_code": "LTE L/L", "type": "course" },
+  { "course_code": "CC COM 4", "prerequisite_course_code": "ETH", "type": "course" },
+  { "course_code": "TH/SP 2", "prerequisite_course_code": "TH/SP 1", "type": "course" },
+  { "course_code": "COM 1", "prerequisite_course_code": "THIRD YEAR STANDING", "type": "standing" },
+
+  { "course_code": "PS 102", "prerequisite_course_code": "PS 101", "type": "course" },
+  { "course_code": "PS 104", "prerequisite_course_code": "PS 101", "type": "course" },
+  { "course_code": "PS 108", "prerequisite_course_code": "PS 101", "type": "course" },
+  { "course_code": "PS 105", "prerequisite_course_code": "PS 101", "type": "course" },
+  { "course_code": "PS 109", "prerequisite_course_code": "PS 101", "type": "course" },
+  { "course_code": "PS 103", "prerequisite_course_code": "PS 101", "type": "course" },
+  { "course_code": "PS 107", "prerequisite_course_code": "PS 101", "type": "course" },
+  { "course_code": "PS 107", "prerequisite_course_code": "PS 102", "type": "course" },
+  { "course_code": "PS 106", "prerequisite_course_code": "PS 101", "type": "course" },
+  { "course_code": "PS 106", "prerequisite_course_code": "PS 103", "type": "course" },
+  { "course_code": "PS 110", "prerequisite_course_code": "PS 106", "type": "course" },
+  { "course_code": "PS 111", "prerequisite_course_code": "THIRD YEAR STANDING", "type": "standing" },
+  { "course_code": "PS 112", "prerequisite_course_code": "THIRD YEAR STANDING", "type": "standing" },
+
+  { "course_code": "PSYCH 103", "prerequisite_course_code": "PSYCH 101", "type": "course" },
+  { "course_code": "PSYCH 104", "prerequisite_course_code": "PSYCH 101", "type": "course" },
+  { "course_code": "PSYCH 113", "prerequisite_course_code": "PSYCH 101", "type": "course" },
+  { "course_code": "PSYCH 105 L/L", "prerequisite_course_code": "PSYCH 102 L/L", "type": "course" },
+  { "course_code": "PSYCH 108", "prerequisite_course_code": "PSYCH 103", "type": "course" },
+  { "course_code": "PSYCH 108", "prerequisite_course_code": "PSYCH 107", "type": "course" },
+  { "course_code": "PSYCH 109", "prerequisite_course_code": "PSYCH 102 L/L", "type": "course" },
+  { "course_code": "PSYCH 106 L/L", "prerequisite_course_code": "PSYCH 102 L/L", "type": "course" },
+  { "course_code": "PSYCH 106 L/L", "prerequisite_course_code": "PSYCH 103", "type": "course" },
+  { "course_code": "PSYCH 110", "prerequisite_course_code": "PSYCH 109", "type": "course" },
+  { "course_code": "PSYCH 112", "prerequisite_course_code": "PSYCH 103", "type": "course" },
+  { "course_code": "PSYCH 114 L/L", "prerequisite_course_code": "PSYCH 105 L/L", "type": "course" },
+  { "course_code": "PSYCH 115", "prerequisite_course_code": "PSYCH 103", "type": "course" },
+  { "course_code": "PSYCH 115", "prerequisite_course_code": "PSYCH 112", "type": "course" },
+  { "course_code": "PSYCH ELE 1", "prerequisite_course_code": "PSYCH 103", "type": "course" },
+  { "course_code": "PSYCH ELE 1", "prerequisite_course_code": "PSYCH 112", "type": "course" },
+  { "course_code": "PSYCH PRAC", "prerequisite_course_code": "THIRD YEAR STANDING", "type": "standing" },
+
+  { "course_code": "BIO 101 L/L", "prerequisite_course_code": "BOT 101 L/L", "type": "course" },
+  { "course_code": "BIO 101 L/L", "prerequisite_course_code": "ZOO 101 L/L", "type": "course" },
+  { "course_code": "BIO 102 L/L", "prerequisite_course_code": "BOT 101 L/L", "type": "course" },
+  { "course_code": "BIO 102 L/L", "prerequisite_course_code": "ZOO 101 L/L", "type": "course" },
+  { "course_code": "BIO 104 L/L", "prerequisite_course_code": "BOT 101 L/L", "type": "course" },
+  { "course_code": "BIO 104 L/L", "prerequisite_course_code": "ZOO 101 L/L", "type": "course" },
+  { "course_code": "CHE 103 L/L", "prerequisite_course_code": "CHE 101 L/L", "type": "course" },
+  { "course_code": "BIO 105 L/L", "prerequisite_course_code": "BOT 101 L/L", "type": "course" },
+  { "course_code": "BIO 105 L/L", "prerequisite_course_code": "ZOO 101 L/L", "type": "course" },
+  { "course_code": "BIO 106 L/L", "prerequisite_course_code": "BOT 101 L/L", "type": "course" },
+  { "course_code": "BIO 106 L/L", "prerequisite_course_code": "ZOO 101 L/L", "type": "course" },
+  { "course_code": "BOT 102 L/L", "prerequisite_course_code": "BOT 101 L/L", "type": "course" },
+  { "course_code": "BIO 107 L/L", "prerequisite_course_code": "BOT 101 L/L", "type": "course" },
+  { "course_code": "BIO 107 L/L", "prerequisite_course_code": "ZOO 101 L/L", "type": "course" },
+  { "course_code": "THE 101", "prerequisite_course_code": "STA 101 L/L", "type": "course" },
+  { "course_code": "MED 102 L/L", "prerequisite_course_code": "BIO 103 L/L", "type": "course" },
+  { "course_code": "BIO 108 L/L", "prerequisite_course_code": "BOT 101 L/L", "type": "course" },
+  { "course_code": "BIO 108 L/L", "prerequisite_course_code": "ZOO 101 L/L", "type": "course" },
+  { "course_code": "BIO 108 L/L", "prerequisite_course_code": "BIO 105 L/L", "type": "course" },
+  { "course_code": "MED 101 L/L", "prerequisite_course_code": "ZOO 101 L/L", "type": "course" },
+  { "course_code": "THE 102", "prerequisite_course_code": "THE 101", "type": "course" },
+  { "course_code": "THE 103", "prerequisite_course_code": "THE 102", "type": "course" },
+  { "course_code": "PRAC 101", "prerequisite_course_code": "THIRD YEAR STANDING", "type": "standing" },
+
+  { "course_code": "CC 123 L/L", "prerequisite_course_code": "CC 112 L/L", "type": "course" },
+  { "course_code": "CS 122 L/L", "prerequisite_course_code": "CC 111 L/L", "type": "course" },
+  { "course_code": "CS 122 L/L", "prerequisite_course_code": "CC 112 L/L", "type": "course" },
+  { "course_code": "CC 134 L/L", "prerequisite_course_code": "CC 123 L/L", "type": "course" },
+  { "course_code": "CC 135 L/L", "prerequisite_course_code": "CC 123 L/L", "type": "course" },
+  { "course_code": "CC 131", "prerequisite_course_code": "CS 121", "type": "course" },
+  { "course_code": "CS 211 L/L", "prerequisite_course_code": "CS 122 L/L", "type": "course" },
+  { "course_code": "CS 211 L/L", "prerequisite_course_code": "CC 134 L/L", "type": "course" },
+  { "course_code": "CS 212 L/L", "prerequisite_course_code": "CC 135 L/L", "type": "course" },
+  { "course_code": "CS 212 L/L", "prerequisite_course_code": "CS 132 L/L", "type": "course" },
+  { "course_code": "MATH 212", "prerequisite_course_code": "MATH 131", "type": "course" },
+  { "course_code": "MATH 223", "prerequisite_course_code": "MATH 212", "type": "course" },
+  { "course_code": "CS 221", "prerequisite_course_code": "CS 122 L/L", "type": "course" },
+  { "course_code": "CS 221", "prerequisite_course_code": "CC 134 L/L", "type": "course" },
+  { "course_code": "CS 223 L/L", "prerequisite_course_code": "CS 212 L/L", "type": "course" },
+  { "course_code": "CS 231 L/L", "prerequisite_course_code": "CS 223 L/L", "type": "course" },
+  { "course_code": "CS 232 L/L", "prerequisite_course_code": "CC 134 L/L", "type": "course" },
+  { "course_code": "CS 232 L/L", "prerequisite_course_code": "CC 135 L/L", "type": "course" },
+  { "course_code": "CS 311", "prerequisite_course_code": "MATH 223", "type": "course" },
+  { "course_code": "CS 312", "prerequisite_course_code": "CS 231 L/L", "type": "course" },
+  { "course_code": "CS 313 L/L", "prerequisite_course_code": "CS 232 L/L", "type": "course" },
+  { "course_code": "CS 314 L/L", "prerequisite_course_code": "CS 211 L/L", "type": "course" },
+  { "course_code": "CS THS 1", "prerequisite_course_code": "CS 313 L/L", "type": "course" },
+  { "course_code": "CSC 326 L/L", "prerequisite_course_code": "CC 134 L/L", "type": "course" },
+  { "course_code": "CSC 326 L/L", "prerequisite_course_code": "CC 135 L/L", "type": "course" },
+  { "course_code": "CS 321", "prerequisite_course_code": "CS 311", "type": "course" },
+  { "course_code": "CS 322 L/L", "prerequisite_course_code": "CS 314 L/L", "type": "course" },
+  { "course_code": "CS THS 2", "prerequisite_course_code": "CS THS 1", "type": "course" },
+  { "course_code": "CS PRC", "prerequisite_course_code": "THIRD YEAR STANDING", "type": "standing" },
+
+  { "course_code": "CSIS 1", "prerequisite_course_code": "CC 134 L/L", "type": "course" },
+  { "course_code": "CSIS 1", "prerequisite_course_code": "MATH 131", "type": "course" },
+  { "course_code": "CSIS 1", "prerequisite_course_code": "CS 132 L/L", "type": "course" },
+  { "course_code": "CSIS 2", "prerequisite_course_code": "CSIS 1", "type": "course" },
+  { "course_code": "CSIS 3", "prerequisite_course_code": "CSIS 2", "type": "course" },
+
+  { "course_code": "CSDC 1", "prerequisite_course_code": "CC 135 L/L", "type": "course" },
+  { "course_code": "CSDC 1", "prerequisite_course_code": "MATH 131", "type": "course" },
+  { "course_code": "CSDC 1", "prerequisite_course_code": "CC 123 L/L", "type": "course" },
+  { "course_code": "CSDC 2", "prerequisite_course_code": "CSDC 1", "type": "course" },
+  { "course_code": "CSDC 3", "prerequisite_course_code": "CSDC 2", "type": "course" },
+
+  { "course_code": "CSRA 1", "prerequisite_course_code": "CS 122 L/L", "type": "course" },
+  { "course_code": "CSRA 1", "prerequisite_course_code": "MATH 131", "type": "course" },
+  { "course_code": "CSRA 1", "prerequisite_course_code": "CS 132 L/L", "type": "course" },
+  { "course_code": "CSRA 2", "prerequisite_course_code": "CSRA 1", "type": "course" },
+  { "course_code": "CSRA 3", "prerequisite_course_code": "CSRA 2", "type": "course" },
+
   {
-    "course_id": "CS-002",
-    "prerequisite_course_id": "CS-001"
+    "course_code": "IENG",
+    "prerequisite_course_code": "ENGLISH DIAGNOSTIC TEST",
+    "type": "placement"
   },
   {
-    "course_id": "CS-003",
-    "prerequisite_course_id": "MATH-001"
-  },
-  {
-    "course_id": "CS-004",
-    "prerequisite_course_id": "CS-001"
-  },
-  {
-    "course_id": "CS-005",
-    "prerequisite_course_id": "CS-002"
-  },
-  {
-    "course_id": "PSY-002",
-    "prerequisite_course_id": "PSY-001"
-  },
-  {
-    "course_id": "PSY-003",
-    "prerequisite_course_id": "PSY-001"
-  },
-  {
-    "course_id": "PSY-004",
-    "prerequisite_course_id": "PSY-002"
-  },
-  {
-    "course_id": "POLS-002",
-    "prerequisite_course_id": "POLS-001"
-  },
-  {
-    "course_id": "POLS-003",
-    "prerequisite_course_id": "POLS-001"
-  },
-  {
-    "course_id": "BIO-002",
-    "prerequisite_course_id": "BIO-001"
-  },
-  {
-    "course_id": "BIO-003",
-    "prerequisite_course_id": "BIO-002"
-  },
-  {
-    "course_id": "ENG-002",
-    "prerequisite_course_id": "ENG-001"
-  },
-  {
-    "course_id": "ENG-003",
-    "prerequisite_course_id": "ENG-002"
-  },
-  {
-    "course_id": "COMM-002",
-    "prerequisite_course_id": "COMM-001"
-  },
-  {
-    "course_id": "COMM-003",
-    "prerequisite_course_id": "COMM-001"
-  },
-  {
-    "course_id": "MATH-002",
-    "prerequisite_course_id": "MATH-001"
-  },
-  {
-    "course_id": "MATH-003",
-    "prerequisite_course_id": "MATH-002"
-  },
-  {
-    "course_id": "STAT-002",
-    "prerequisite_course_id": "STAT-001"
-  },
-  {
-    "course_id": "STAT-002",
-    "prerequisite_course_id": "MATH-001"
-  },
-  {
-    "course_id": "CS-005",
-    "prerequisite_course_id": "CS-003"
+    "course_code": "IMAT",
+    "prerequisite_course_code": "MATH DIAGNOSTIC TEST",
+    "type": "placement"
   }
 ]
+

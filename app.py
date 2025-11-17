@@ -6,6 +6,7 @@ import streamlit as st
 from rapidfuzz import fuzz
 
 from chat_ui import getchatbubblehtml, getfooterhtml
+
 from data_api import (
     load_all,
     find_course_by_code,
@@ -15,6 +16,7 @@ from data_api import (
     course_by_alias,
     find_course_any,
     units_by_program_year,
+    units_by_program_year_with_exclusions,
     list_department_heads,
     get_department_head_by_name,
     department_lookup,
@@ -27,20 +29,24 @@ from nlu_rules import (
     extract_entities,
 )
 
+
 def load_css_rel_path(css_path: Path):
     relpath = (Path(__file__).parent / css_path).resolve()
     if relpath.exists():
         css = relpath.read_text(encoding="utf-8")
         st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
+
 st.set_page_config(page_title="CASmate Chat", layout="centered")
 load_css_rel_path(Path("styles.css"))
+
 
 @st.cache_data(show_spinner=False)
 def bootstrap_data():
     data = load_all()
-    build_gazetteers(data["programs"], data["courses"], data["synonyms"], data["departments"])
+    build_gazetteers(data["programs"], data["courses"], data["departments"])
     return data
+
 
 data = bootstrap_data()
 
@@ -57,6 +63,7 @@ if "pending_intent" not in st.session_state:
 if "awaiting_college_scope" not in st.session_state:
     st.session_state.awaiting_college_scope = False
 
+
 def render_header():
     st.markdown(
         """
@@ -66,7 +73,10 @@ def render_header():
         """,
         unsafe_allow_html=True,
     )
+
+
 render_header()
+
 
 def render_message(sender, message):
     st.markdown(
@@ -74,39 +84,40 @@ def render_message(sender, message):
         unsafe_allow_html=True
     )
 
-# First conversational prompt
+
 if not st.session_state.did_intro_prompt:
-    st.session_state.chat.append({"sender": "CASmate", "message": "Hello! I’m CASmate. What’s your name?"})
+    st.session_state.chat.append({"sender": "CASmate", "message": "Hello! I'm CASmate. What's your name?"})
     st.session_state.did_intro_prompt = True
 
 for msg in st.session_state.chat:
     render_message(msg["sender"], msg["message"])
 
-# ---------------- Helpers ----------------
 CODE_RE = re.compile(r"\b([A-Za-z]{2,4})-?(\d{2,3})\b")
 GREETINGS = {
-    "hi","hello","hey","hiya","yo","howdy","good morning","good afternoon","good evening",
-    "greetings","sup","morning","afternoon","evening"
+    "hi", "hello", "hey", "hiya", "yo", "howdy", "good morning", "good afternoon", "good evening",
+    "greetings", "sup", "morning", "afternoon", "evening"
 }
-NON_NAMES = {"thanks","thank you","ok","okay","pls","please","yes","no"}
+NON_NAMES = {"thanks", "thank you", "ok", "okay", "pls", "please", "yes", "no"}
 
 COLLEGE_ALIASES = {
-    "CAS": ["CAS","COLLEGE OF ARTS AND SCIENCES","COLLEGE OF ARTS & SCIENCES"],
-    "CCJE": ["CCJE","COLLEGE OF CRIMINAL JUSTICE EDUCATION"],
-    "COL": ["COL","COLLEGE OF LAW"],
-    "COBE": ["COBE","COLLEGE OF BUSINESS EDUCATION"],
-    "COME": ["COME","COLLEGE OF MARITIME EDUCATION"],
-    "CTE": ["CTE","COLLEGE OF TEACHER EDUCATION"],
-    "CAHS": ["CAHS","COLLEGE OF ALLIED HEALTH SCIENCES"],
-    "CIHTM": ["CIHTM","COLLEGE OF INTERNATIONAL HOSPITALITY AND TOURISM MANAGEMENT"],
-    "CEAT": ["CEAT","COLLEGE OF ENGINEERING","COLLEGE OF ENGINEERING, ARCHITECTURE, AND TECHNOLOGY","COLLEGE OF ENGINEERING ARCHITECTURE AND TECHNOLOGY"],
+    "CAS": ["CAS", "COLLEGE OF ARTS AND SCIENCES", "COLLEGE OF ARTS & SCIENCES"],
+    "CCJE": ["CCJE", "COLLEGE OF CRIMINAL JUSTICE EDUCATION"],
+    "COL": ["COL", "COLLEGE OF LAW"],
+    "COBE": ["COBE", "COLLEGE OF BUSINESS EDUCATION"],
+    "COME": ["COME", "COLLEGE OF MARITIME EDUCATION"],
+    "CTE": ["CTE", "COLLEGE OF TEACHER EDUCATION"],
+    "CAHS": ["CAHS", "COLLEGE OF ALLIED HEALTH SCIENCES"],
+    "CIHTM": ["CIHTM", "COLLEGE OF INTERNATIONAL HOSPITALITY AND TOURISM MANAGEMENT"],
+    "CEAT": ["CEAT", "COLLEGE OF ENGINEERING", "COLLEGE OF ENGINEERING, ARCHITECTURE, AND TECHNOLOGY", "COLLEGE OF ENGINEERING ARCHITECTURE AND TECHNOLOGY"],
 }
 
 NWU_OFFICIAL_URL = "https://www.facebook.com/NWUofficial"
 NWU_FINANCE_URL = "https://www.facebook.com/NWUFinance"
 
+
 def _format_course(c: dict) -> str:
     return f"{c.get('course_code', '').strip()} — {c.get('course_title', '').strip()}"
+
 
 def _format_head_row(r: dict) -> str:
     name = r.get("department_name", "")
@@ -116,23 +127,27 @@ def _format_head_row(r: dict) -> str:
         return f"Dean (CAS): {head}"
     return f"{name}: {head}"
 
+
 def _is_dept_headish(text: str) -> bool:
     t = (text or "").lower()
-    dept_like = any(x in t for x in ["department","dept","dept.","deprt","deprtm","detp"])
-    head_like = any(x in t for x in ["head","haed","hed","chair","dean"])
+    dept_like = any(x in t for x in ["department", "dept", "dept.", "deprt", "deprtm", "detp"])
+    head_like = any(x in t for x in ["head", "haed", "hed", "chair", "dean"])
     fuzzy_dept = fuzz.partial_ratio(t, "department") >= 80 or fuzz.partial_ratio(t, "dept") >= 80
     fuzzy_head = fuzz.partial_ratio(t, "head") >= 80
     return (dept_like or fuzzy_dept) and (head_like or fuzzy_head)
+
 
 def _looks_like_greeting(text: str) -> bool:
     t = (text or "").strip().lower()
     t = re.sub(r"[!.\s]+$", "", t)
     return t in GREETINGS
 
+
 def _clean_as_name(s: str) -> str:
     t = re.sub(r"[^A-Za-z\-\s']", " ", s or "").strip()
     t = re.sub(r"\s+", " ", t)
     return t.title()
+
 
 def _extract_name(text: str) -> Optional[str]:
     t = (text or "").strip()
@@ -142,7 +157,7 @@ def _extract_name(text: str) -> Optional[str]:
     m = p.match(t)
     if m:
         return _clean_as_name(m.group(1))
-    blacklist = {"units","prereq","prerequisite","department","dept","head","program","year","semester","course","dean"}
+    blacklist = {"units", "prereq", "prerequisite", "department", "dept", "head", "program", "year", "semester", "course", "dean"}
     if "?" not in t and CODE_RE.search(t) is None:
         tokens = re.findall(r"[A-Za-z][A-Za-z'\-]*", t)
         if 1 <= len(tokens) <= 3:
@@ -152,17 +167,20 @@ def _extract_name(text: str) -> Optional[str]:
                 return _clean_as_name(cand)
     return None
 
+
 def _looks_like_question(text: str) -> bool:
     t = (text or "").strip().lower()
     if "?" in t: return True
-    if any(t.startswith(w) for w in ["who","what","how","where","when"]): return True
-    if any(k in t for k in ["units","prereq","prerequisite","department","dept","head","program","year","semester","course","dean"]): return True
+    if any(t.startswith(w) for w in ["who", "what", "how", "where", "when"]): return True
+    if any(k in t for k in ["units", "prereq", "prerequisite", "department", "dept", "head", "program", "year", "semester", "course", "dean"]): return True
     if CODE_RE.search(t): return True
     return False
 
+
 def _looks_like_payment(text: str) -> bool:
     t = (text or "").lower()
-    return any(k in t for k in ["tuition","payment","pay","downpayment","down payment","cashier","finance","fees","balance"])
+    return any(k in t for k in ["tuition", "payment", "pay", "downpayment", "down payment", "cashier", "finance", "fees", "balance"])
+
 
 def _detect_college(text: str) -> Optional[str]:
     t = (text or "").upper()
@@ -172,10 +190,12 @@ def _detect_college(text: str) -> Optional[str]:
                 return code
     return None
 
+
 def _refer_university(channel_hint: Optional[str] = None) -> str:
     if channel_hint == "finance":
         return "For payment-related inquiries, please contact the University Finance office through its official channel."
-    return "For colleges outside CAS, please reach out through the University’s official channel."
+    return "For colleges outside CAS, please reach out through the University's official channel."
+
 
 def handle_prereq(user_text: str, ents: dict) -> str:
     courses = data["courses"]
@@ -199,6 +219,7 @@ def handle_prereq(user_text: str, ents: dict) -> str:
         lines.append(f"- {_format_course(c)}")
     return "\n".join(lines)
 
+
 def handle_units(user_text: str, ents: dict) -> str:
     programs = data["programs"]
     plan = data["plan"]
@@ -215,14 +236,35 @@ def handle_units(user_text: str, ents: dict) -> str:
     year = ents.get("year_num")
     if not prog_row or not year:
         return "Please specify a program and year, e.g., 'How many units does 1st year Computer Science take?'."
-    total, by_sem = units_by_program_year(plan, courses, prog_row["program_id"], year)
+    # Get units with diagnostic course exclusions
+    total, by_sem, diagnostic_excluded = units_by_program_year_with_exclusions(
+        plan, courses, prog_row["program_id"], year
+    )
     if total == 0:
         return f"No curriculum entries found for {prog_row['program_name']} year {year}."
-    parts = [f"Total units for year {year} — {prog_row['program_name']}: {total}"]
+    # Convert year number to ordinal words
+    year_labels = {1: "first", 2: "second", 3: "third", 4: "fourth"}
+    year_text = year_labels.get(year, f"year {year}")
+    lines = [f"For {year_text} year {prog_row['program_name']}, the total is {total} units.\n"]
     if by_sem:
-        details = ", ".join([f"Sem {k}: {v}" for k, v in sorted(by_sem.items(), key=lambda x: x[0])])
-        parts.append(f"Breakdown: {details}")
-    return "\n".join(parts)
+        trimester_names = {
+            "1": "First Trimester",
+            "2": "Second Trimester",
+            "3": "Third Trimester"
+        }
+        for sem in sorted(by_sem.keys(), key=int):
+            tri_name = trimester_names.get(sem, f"Trimester {sem}")
+            lines.append(f"  • {tri_name}: {by_sem[sem]} units")
+    # Disclaimer about diagnostic exclusion
+    if diagnostic_excluded:
+        lines.append(
+            "\nNote: Math Review (IMAT) and English Review (IENG) are not included in this count. "
+            "These courses are only required based on your diagnostic exam results. "
+            "For more information, contact the NWU Guidance Office via their Facebook page: "
+            "https://www.facebook.com/NWUGuidance"
+        )
+    return "\n".join(lines)
+
 
 def handle_dept_heads_list_or_clarify(user_text: str, ents: dict) -> str:
     tlow = (user_text or "").lower().strip()
@@ -240,6 +282,7 @@ def handle_dept_heads_list_or_clarify(user_text: str, ents: dict) -> str:
     st.session_state.awaiting_college_scope = True
     st.session_state.pending_intent = "dept_heads_college"
     return "Do you mean CAS department heads, or heads from another college (e.g., CCJE, COL, COBE, COME, CTE, CAHS, CIHTM, CEAT)?"
+
 
 def handle_dept_head_one(user_text: str, ents: dict) -> str:
     tlow = (user_text or "").lower()
@@ -262,12 +305,13 @@ def handle_dept_head_one(user_text: str, ents: dict) -> str:
             st.session_state.awaiting_dept_scope = True
             st.session_state.pending_intent = "dept_heads_list"
             return "Which department do you mean (e.g., 'Computer Science')? Or say 'all' for the full CAS list."
-        return "Sorry, that department wasn’t recognized. Try the full name (e.g., Computer Science)."
+        return "Sorry, that department wasn't recognized. Try the full name (e.g., Computer Science)."
     head = drow.get("department_head")
     role = get_dept_role_label(drow, user_text)
     if not head:
         return f"No {role.lower()} is recorded for {drow.get('department_name')}."
     return f"The {role.lower()} is {head}."
+
 
 def resolve_pending(user_text: str) -> Optional[str]:
     tlow = (user_text or "").lower().strip()
@@ -312,6 +356,7 @@ def resolve_pending(user_text: str) -> Optional[str]:
         return "Thanks. Please specify a college (CAS, CCJE, COL, COBE, COME, CTE, CAHS, CIHTM, CEAT)."
     return None
 
+
 def route(user_text: str) -> str:
     if st.session_state.awaiting_dept_scope or st.session_state.awaiting_college_scope:
         resolved = resolve_pending(user_text)
@@ -322,7 +367,7 @@ def route(user_text: str) -> str:
     intent = detect_intent(user_text)
     ents = extract_entities(user_text)
     tlow = (user_text or "").lower().strip().rstrip("?!.")
-    if tlow in {"department heads","dept heads","dept. heads","different department heads"}:
+    if tlow in {"department heads", "dept heads", "dept. heads", "different department heads"}:
         return handle_dept_heads_list_or_clarify(user_text, ents)
     if intent == "courseinfo" and _is_dept_headish(user_text):
         if ents.get("department"):
@@ -341,6 +386,7 @@ def route(user_text: str) -> str:
         return f"{_format_course(c)} — {c.get('units', 'N/A')} units."
     return "Could you clarify what you need? Happy to help with prerequisites, unit loads, or department leadership."
 
+
 placeholder = "Say hello, share your name, or ask about prerequisites, unit loads, or department leadership…"
 prompt = st.chat_input(placeholder)
 if prompt:
@@ -357,9 +403,9 @@ if prompt:
                 st.session_state.user_name = maybe_name
                 opening = (
                     f"Nice to meet you, {maybe_name}! "
-                    "Here’s how I can help: outline course prerequisites, summarize unit loads by year and program, "
+                    "Here's how I can help: outline course prerequisites, summarize unit loads by year and program, "
                     "and identify department leadership including the CAS Dean. "
-                    "If I need more details, I’ll ask; and if something’s better handled elsewhere, I’ll point you to the right office."
+                    "If I need more details, I'll ask; and if something's better handled elsewhere, I'll point you to the right office."
                 )
                 st.session_state.chat.append({"sender": "CASmate", "message": opening})
                 render_message("CASmate", opening)
