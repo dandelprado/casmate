@@ -225,22 +225,29 @@ def detect_intent(text: str) -> str:
     labels = [nlp.vocab.strings[mid] for mid, _, _ in matcher(doc)]
     tlow = (text or "").lower().strip()
 
+    # Department head / leadership questions
     if "dean" in tlow:
         return "dept_head_one"
     if "heads" in tlow or "leadership" in tlow:
         return "dept_heads_list"
-
     if "INTENT_DEPT_HEADS_LIST" in labels or tlow in {
-        "department heads", "dept heads", "dept. heads", "different department heads"
+        "department heads",
+        "dept heads",
+        "dept. heads",
+        "different department heads",
     }:
         return "dept_heads_list"
-
     if "INTENT_DEPT_HEAD_ONE" in labels or (
         "dept head" in tlow or "department head" in tlow or "who's the" in tlow
     ):
         return "dept_head_one"
 
-    # Curriculum / subject-list questions (explicit words)
+    if "INTENT_PREREQ" in labels or "prereq" in tlow or "prerequisite" in tlow:
+        return "prerequisites"
+
+    if "INTENT_UNITS" in labels or "units" in tlow:
+        return "units"
+
     if any(w in tlow for w in ["subject", "subjects", "course", "courses", "curriculum"]):
         has_year_hint = (
             "year" in tlow
@@ -283,7 +290,6 @@ def detect_intent(text: str) -> str:
         if has_year_hint or has_prog_hint:
             return "curriculum"
 
-    # Curriculum questions without explicit "subjects/courses" but with year + program
     has_year_only = (
         "year" in tlow
         or "yr " in tlow
@@ -324,13 +330,6 @@ def detect_intent(text: str) -> str:
     )
     if has_year_only and has_prog_only:
         return "curriculum"
-
-    # Prerequisites and units
-    if "INTENT_PREREQ" in labels or "prereq" in tlow or "prerequisite" in tlow:
-        return "prerequisites"
-
-    if "INTENT_UNITS" in labels or "units" in tlow:
-        return "units"
 
     # Fallback: course info / single-course questions
     return "courseinfo"

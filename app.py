@@ -703,12 +703,13 @@ def handle_prereq(user_text: str, ents: dict) -> str:
 
     return "\n".join(lines)
 
+
 def handle_units(user_text: str, ents: dict) -> str:
     programs = data["programs"]
     plan = data["plan"]
     courses = data["courses"]
 
-    # Figure out program first.
+    # 1) Figure out program first from entities or from free text.
     prog_row = None
     if ents.get("program"):
         res = fuzzy_best_program(programs, ents["program"], score_cutoff=60)
@@ -721,50 +722,132 @@ def handle_units(user_text: str, ents: dict) -> str:
 
     if not prog_row:
         return (
-            "To check the units, I’ll need to know which program you’re asking about.\n\n"
+            "To check the units, I'll need to know which program you're asking about. "
             "Some examples:\n"
             "• BS Computer Science units\n"
             "• BS Biology units\n"
-            "• BS Psychology units\n\n"
+            "• BS Psychology units\n"
             "Which program are you interested in?"
         )
 
     pid = prog_row["program_id"]
     pname = prog_row["program_name"]
-    year = ents.get("year_num")
+    pname_lower = (pname or "").lower()
 
+    # 2) Require a year level.
+    year = ents.get("year_num")
     if not year:
         return (
-            f"For {pname}, I’ll also need the year level so I can total the units.\n\n"
+            f"For {pname}, I'll also need the year level so I can total the units.\n"
             f"Some examples you can ask:\n"
             f"• How many units does 1st year {pname} take?\n"
             f"• How many units does 2nd year {pname} take?"
         )
 
-    total_units, by_sem, diagnostic_excluded = units_by_program_year_with_exclusions(
+    # 3) Get per-trimester units and per-trimester diagnostic flags.
+    total_units, by_sem, diagnostic_by_sem = units_by_program_year_with_exclusions(
         plan, courses, pid, year
     )
 
-    year_labels = {1: "First year", 2: "Second year", 3: "Third year", 4: "Fourth year"}
+    year_labels = {
+        1: "First year",
+        2: "Second year",
+        3: "Third year",
+        4: "Fourth year",
+    }
     year_label = year_labels.get(year, f"Year {year}")
+
+    # BA English: explicit “not loaded yet” message for units.
+    if not by_sem and "english language" in pname_lower:
+        return (
+            "The detailed unit loading for BA in English Language isn’t loaded in this system yet.\n\n"
+            "For accurate and up-to-date information on units per year or semester, "
+            "please check directly with the Department of Language and Literature. "
+            "You can start with the department head, DR. JV, for curriculum and unit questions."
+        )
 
     if not by_sem:
         return (
-            f"I couldn’t find unit data for {year_label} {pname} in the current curriculum plan."
+            f"I couldn't find unit data for {year_label} {pname} "
+            f"in the current curriculum plan."
         )
 
-    lines = [f"Estimated total units for {year_label} {pname} (excluding diagnostic review subjects):"]
-    for sem, units in sorted(by_sem.items(), key=lambda kv: kv[0]):
-        sem_label = {"1": "First trimester", "2": "Second trimester", "3": "Third trimester"}.get(
-            sem, f"Trimester {sem}"
+    term = ents.get("term_num")
+    term_labels = {
+        1: "First trimester",
+        2: "Second trimester",
+        3: "Third trimester",
+    }
+
+    lines: list[str] = []
+
+    # 4) Term-specific query.
+    if term:
+        term_key = str(term)
+        units_for_term = by_sem.get(term_key)
+        sem_label = term_labels.get(term, f"Trimester {term}")
+
+        if not units_for_term:
+            return (
+                f"I couldn't find unit data for {year_label} {pname}, "
+                f"{sem_label} in the current curriculum plan."
+            )
+
+        has_diag_this_term = bool(diagnostic_by_sem.get(term_key))
+
+        if has_diag_this_term:
+            header = (
+                f"Units for {year_label} {pname}, {sem_label} "
+                f"(excluding diagnostic review subjects):"
+            )
+        else:
+            header = f"Units for {year_label} {pname}, {sem_label}:"
+
+        lines.append(header)
+        lines.append(f"• {sem_label}: {units_for_term} units")
+
+        if has_diag_this_term:
+            lines.append(
+                "Note: Diagnostic review subjects like IMAT (Math Review) and "
+                "IENG (English Review) depend on your placement/diagnostic test "
+                "results, so they’re not included here. Please inquire with the "
+                "Guidance Office via their Facebook page "
+                "https://www.facebook.com/NWUGuidance."
+            )
+
+        return "\n".join(lines)
+
+    # 5) Year-level query.
+    any_diag = any(diagnostic_by_sem.values())
+
+    if any_diag:
+        header = (
+            f"Total units for {year_label} {pname} "
+            f"(excluding diagnostic review subjects):"
         )
+    else:
+        header = f"Total units for {year_label} {pname}:"
+
+    lines.append(header)
+
+    for sem_key, units in sorted(by_sem.items(), key=lambda kv: int(kv[0])):
+        sem = int(sem_key)
+        sem_label = term_labels.get(sem, f"Trimester {sem}")
         lines.append(f"• {sem_label}: {units} units")
-    lines.append(f"\nOverall total (excluding IMAT/IENG): {total_units} units")
 
-    if diagnostic_excluded:
+    overall_line = "Overall total"
+    if any_diag:
+        overall_line += " (excluding IMAT/IENG)"
+    overall_line += f": {total_units} units"
+    lines.append(f"\n{overall_line}")
+
+    if any_diag:
         lines.append(
-            "\nNote: Diagnostic review subjects like IMAT (Math Review) and IENG (English Review) "
-            "depend on your placement/diagnostic test results, so they’re not included here."
+            "Note: Diagnostic review subjects like IMAT (Math Review) and "
+            "IENG (English Review) depend on your placement/diagnostic test "
+            "results, so they’re not included here. Please inquire with the "
+            "Guidance Office via their Facebook page "
+            "https://www.facebook.com/NWUGuidance."
         )
 
     return "\n".join(lines)
@@ -792,7 +875,6 @@ def handle_curriculum(user_text: str, ents: dict) -> str:
             "for curriculum questions."
         )
 
-    # 1) Resolve program from entities or free text.
     prog_row = None
     if ents.get("program"):
         res = fuzzy_best_program(programs, ents["program"], score_cutoff=60)

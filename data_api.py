@@ -109,25 +109,116 @@ def _normalize_phrase(s: str) -> str:
 def _clean_course_query(text: str) -> str:
     base = _normalize_phrase(text)
     if not base:
-        return ""
+        return base
 
     tokens = base.split()
-
     remove = {
-        "what", "whats", "what's",
-        "is", "are", "the",
-        "of", "for",
-        "subject", "course", "subjects", "courses",
-        "prereq", "prereqs", "prerequisite", "prerequisites",
-        "requirement", "requirements",
-        "in", "about", "regarding",
-        "do", "does", "should", "need", "take",
-        "before", "prior",
+        "what",
+        "whats",
+        "what's",
+        "is",
+        "are",
+        "the",
+        "of",
+        "for",
+        "subject",
+        "course",
+        "subjects",
+        "courses",
+        "prereq",
+        "prereqs",
+        "prerequisite",
+        "prerequisites",
+        "requirement",
+        "requirements",
+        "in",
+        "about",
+        "regarding",
+        "do",
+        "does",
+        "should",
+        "need",
+        "take",
+        "before",
+        "prior",
+    }
+
+    def is_meta_token(t: str) -> bool:
+        if t in remove:
+            return True
+        if t.startswith("prereq"):
+            return True
+        if t.startswith("requirement"):
+            return True
+        return False
+
+    kept = [t for t in tokens if not is_meta_token(t)]
+    cleaned = " ".join(kept) if kept else base
+
+    norm_clean = cleaned.strip().upper()
+    if norm_clean and norm_clean in PROGRAM_ABBREV:
+        return ""
+
+    return cleaned
+
+
+def _clean_program_query(text: str) -> str:
+    base = _normalize_phrase(text)
+    if not base:
+        return base
+
+    tokens = base.split()
+    remove = {
+        # question / glue words
+        "what",
+        "whats",
+        "what's",
+        "how",
+        "many",
+        "is",
+        "are",
+        "does",
+        "do",
+        "the",
+        "a",
+        "an",
+        "of",
+        "for",
+        "in",
+        "on",
+        "about",
+        "regarding",
+        "take",
+        "need",
+        # unit / load words
+        "unit",
+        "units",
+        "load",
+        "total",
+        # year / level
+        "year",
+        "yr",
+        "freshman",
+        "sophomore",
+        "junior",
+        "senior",
+        "first",
+        "1st",
+        "second",
+        "2nd",
+        "third",
+        "3rd",
+        "fourth",
+        "4th",
+        # term / sem
+        "sem",
+        "sem.",
+        "semester",
+        "trimester",
+        "term",
     }
 
     kept = [t for t in tokens if t not in remove]
-
-    # If everything was stripped, fall back to the normalized base.
     return " ".join(kept) if kept else base
 
 
@@ -336,24 +427,20 @@ def course_by_alias(data: Dict, alias: str) -> Optional[Dict]:
     if not courses:
         return None
 
-    # 1) Try keyword/token overlap on the cleaned query.
-    kw_hit = _keyword_match_course(courses, alias)
+    clean = _clean_course_query(alias)
+    if not clean:
+        return None
+
+    kw_hit = _keyword_match_course(courses, clean)
     if kw_hit:
         return kw_hit
 
-    # 2) Try fuzzy match on the raw text.
-    fb = fuzzy_best_course_title(courses, alias, score_cutoff=70)
+    fb = fuzzy_best_course_title(courses, clean, score_cutoff=70)
     if fb:
         return fb[2]
 
-    # 3) Try fuzzy match again on the cleaned text.
-    clean = _clean_course_query(alias)
-    if clean and clean != alias:
-        fb = fuzzy_best_course_title(courses, clean, score_cutoff=70)
-        if fb:
-            return fb[2]
-
     return None
+
 
 
 def find_course_any(data: Dict, text: str) -> Optional[Dict]:
@@ -368,7 +455,7 @@ def find_course_any(data: Dict, text: str) -> Optional[Dict]:
         code = (c.get("course_code") or c.get("course_id") or "").upper()
         if not code:
             continue
-        code_no_space = code.replace(" ", "")
+        code_no_space = code.replace(" ", "").replace("-", "")
         if code in text_upper or code_no_space in no_space:
             return c
 
@@ -378,6 +465,10 @@ def find_course_any(data: Dict, text: str) -> Optional[Dict]:
         found = find_course_by_code(courses, code)
         if found:
             return found
+
+    clean_for_program = _clean_course_query(text)
+    if not clean_for_program:
+        return None
 
     alias_hit = course_by_alias(data, text)
     if alias_hit:
@@ -395,50 +486,140 @@ def find_course_any(data: Dict, text: str) -> Optional[Dict]:
     return None
 
 
+def _clean_program_query(text: str) -> str:
+    base = _normalize_phrase(text)
+    if not base:
+        return base
+
+    tokens = base.split()
+    remove = {
+        "what",
+        "whats",
+        "what's",
+        "how",
+        "many",
+        "is",
+        "are",
+        "does",
+        "do",
+        "the",
+        "a",
+        "an",
+        "of",
+        "for",
+        "in",
+        "on",
+        "about",
+        "regarding",
+        "take",
+        "need",
+        # unit / load words
+        "unit",
+        "units",
+        "load",
+        "total",
+        # year / level
+        "year",
+        "yr",
+        "freshman",
+        "sophomore",
+        "junior",
+        "senior",
+        "first",
+        "1st",
+        "second",
+        "2nd",
+        "third",
+        "3rd",
+        "fourth",
+        "4th",
+        # term / sem
+        "sem",
+        "sem.",
+        "semester",
+        "trimester",
+        "term",
+    }
+
+    kept = [t for t in tokens if t not in remove]
+    return " ".join(kept) if kept else base
+
+
 def fuzzy_best_program(
     programs: List[Dict], query: str, score_cutoff: int = 70
 ) -> Optional[Tuple[str, int, Dict]]:
     if not query:
         return None
 
-    query_upper = query.strip().upper()
+    cleaned = _clean_program_query(query)
+    use_query = cleaned or query
+    query_upper = use_query.strip().upper()
+    tokens = use_query.split()
+
+    for tok in tokens:
+        tok_upper = tok.upper()
+        if tok_upper in PROGRAM_ABBREV:
+            target_name = PROGRAM_ABBREV[tok_upper]
+            for p in programs:
+                if (p.get("program_name") or "").strip().upper() == target_name.upper():
+                    return (use_query, 100, p)
+
+    # 1) Whole-string abbreviation hit via PROGRAM_ABBREV, then map to a program row.
     if query_upper in PROGRAM_ABBREV:
         target_name = PROGRAM_ABBREV[query_upper]
         for p in programs:
             if (p.get("program_name") or "").strip().upper() == target_name.upper():
-                return (query, 100, p)
+                return (use_query, 100, p)
+
+    # 2) Exact match on full program name (program_name).
     for p in programs:
         pname = (p.get("program_name") or "").strip()
-        if pname.upper() == query_upper:
+        if pname and pname.upper() == query_upper:
             return (pname, 100, p)
+
+    # 3) Substring match on full program name (e.g., 'PSYCHOLOGY' in 'Bachelor of Science in Psychology').
     for p in programs:
         pname = (p.get("program_name") or "").strip()
-        if query_upper in pname.upper():
+        if pname and query_upper in pname.upper():
             return (pname, 95, p)
+
+    # 4) Exact and substring match on short_name (e.g., 'BS Psychology', 'BS Computer Science').
     for p in programs:
         sname = (p.get("short_name") or "").strip()
-        if sname.upper() == query_upper:
+        if sname and sname.upper() == query_upper:
             return (p.get("program_name"), 100, p)
-        if query_upper in sname.upper():
+        if sname and query_upper in sname.upper():
             return (p.get("program_name"), 95, p)
+
+    # 5) Build a choices dict of all names/aliases we know.
     choices: Dict[str, Dict] = {}
+
+    # Full program names.
     for p in programs:
         name = p.get("program_name") or ""
         if name:
             choices[name] = p
+
+    # Short names.
     for p in programs:
         sname = p.get("short_name") or ""
         if sname:
             choices[sname] = p
+
+    # Short forms like 'Computer Science', 'Psychology' derived from long names.
     for p in programs:
         name = p.get("program_name") or ""
         low = name.lower()
         if low.startswith("bachelor of science in "):
-            short = name[23:]
-            choices[short] = p
+            short = name[len("Bachelor of Science in ") :].strip()
+            if short:
+                choices[short] = p
         elif low.startswith("bachelor of arts in "):
-            short = name[20:]
-            choices[short] = p
+            short = name[len("Bachelor of Arts in ") :].strip()
+            if short:
+                choices[short] = p
+
+    # Abbreviations from PROGRAM_ABBREV (CS, BSCS, PSYCH, BIO, etc.).
     for abbrev, full_name in PROGRAM_ABBREV.items():
         row = next(
             (p for p in programs if (p.get("program_name") or "").upper() == full_name.upper()),
@@ -450,7 +631,13 @@ def fuzzy_best_program(
     if not choices:
         return None
 
-    result = process.extractOne(query, list(choices.keys()), scorer=fuzz.WRatio, score_cutoff=score_cutoff)
+    # 6) Final fuzzy match over all keys (full names, shorts, and abbreviations).
+    result = process.extractOne(
+        use_query,
+        list(choices.keys()),
+        scorer=fuzz.WRatio,
+        score_cutoff=score_cutoff,
+    )
     if not result:
         return None
     match, score, _ = result
@@ -570,15 +757,16 @@ def units_by_program_year_with_exclusions(
     courses: List[Dict],
     program_id: str,
     year: int,
-) -> Tuple[int, Dict[str, int], bool]:
+) -> Tuple[int, Dict[str, int], Dict[str, bool]]:
     DIAGNOSTIC_COURSES = {"IMAT", "IENG"}
-    
+
     by_sem: Dict[str, int] = {}
+    diagnostic_by_sem: Dict[str, bool] = {}
     total = 0
-    diagnostic_excluded = False
 
     for sem in ["1", "2", "3"]:
         sem_courses: List[Dict] = []
+        had_diagnostic = False
 
         for entry in plan:
             if (
@@ -591,7 +779,7 @@ def units_by_program_year_with_exclusions(
                 if c:
                     course_code = (c.get("course_code") or "").strip().upper()
                     if course_code in DIAGNOSTIC_COURSES:
-                        diagnostic_excluded = True
+                        had_diagnostic = True
                         continue
                     sem_courses.append(c)
 
@@ -599,8 +787,9 @@ def units_by_program_year_with_exclusions(
         if sem_units > 0:
             by_sem[sem] = sem_units
             total += sem_units
+        diagnostic_by_sem[sem] = had_diagnostic
 
-    return total, by_sem, diagnostic_excluded
+    return total, by_sem, diagnostic_by_sem
 
 
 def get_department_by_id(departments: List[Dict], dept_id: str) -> Optional[Dict]:
