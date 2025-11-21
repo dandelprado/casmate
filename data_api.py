@@ -12,26 +12,56 @@ _PUNCT = re.compile(r"[^\w\s]")
 
 CODE_RE = re.compile(r"\b([A-Za-z]{2,4})-?(\d{2,3})\b")
 
+
 PROGRAM_ABBREV = {
+    # BS Computer Science
     "CS": "Bachelor of Science in Computer Science",
     "BSCS": "Bachelor of Science in Computer Science",
     "COMPUTER SCIENCE": "Bachelor of Science in Computer Science",
     "COMP SCI": "Bachelor of Science in Computer Science",
+    "COMSCI": "Bachelor of Science in Computer Science",
+    "COM SCI": "Bachelor of Science in Computer Science",
+    "BS COMP SCI": "Bachelor of Science in Computer Science",
+    "BSCOMP SCI": "Bachelor of Science in Computer Science",
+    "BS COM SCI": "Bachelor of Science in Computer Science",
+    "BSCOMSCI": "Bachelor of Science in Computer Science",
+
+    # BS Psychology
     "PSYCH": "Bachelor of Science in Psychology",
     "BS PSYCH": "Bachelor of Science in Psychology",
+    "BSPSYCH": "Bachelor of Science in Psychology",
     "PSYCHOLOGY": "Bachelor of Science in Psychology",
+
+    # BA Political Science
     "POLSAY": "Bachelor of Arts in Political Science",
     "POLSCI": "Bachelor of Arts in Political Science",
     "AB POLSCI": "Bachelor of Arts in Political Science",
+    "ABPOLSCI": "Bachelor of Arts in Political Science",
+    "BAPOLSCI": "Bachelor of Arts in Political Science",
+    "BA POLSCI": "Bachelor of Arts in Political Science",
     "POLITICAL SCIENCE": "Bachelor of Arts in Political Science",
     "POLS": "Bachelor of Arts in Political Science",
+    "AB PS": "Bachelor of Arts in Political Science",
+    "ABPS": "Bachelor of Arts in Political Science",
+    "BAPS": "Bachelor of Arts in Political Science",
+    "BA PS": "Bachelor of Arts in Political Science",
+
+    # BA English Language
     "BAEL": "BA in English Language",
     "ABEL": "BA in English Language",
+
+    # BA Communication
     "BACOMM": "Bachelor of Arts in Communication",
     "COMM": "Bachelor of Arts in Communication",
     "COMMUNICATION": "Bachelor of Arts in Communication",
+    "ABCOMM": "Bachelor of Arts in Communication",
+    "AB COMM": "Bachelor of Arts in Communication",
+    "BA COMM": "Bachelor of Arts in Communication",
+
+    # BS Biology
     "BIO": "Bachelor of Science in Biology",
     "BS BIO": "Bachelor of Science in Biology",
+    "BSBIO": "Bachelor of Science in Biology",
     "BIOLOGY": "Bachelor of Science in Biology",
 }
 

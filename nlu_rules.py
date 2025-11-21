@@ -12,21 +12,32 @@ phrase_matcher = PhraseMatcher(nlp.vocab, attr="LOWER")
 WS_RE = re.compile(r"\s+")
 CODE_RE = re.compile(r"\b([A-Za-z]{2,4})-?(\d{2,3})\b")
 
+
 PROGRAM_CANON = {
     "CS": "BS in Computer Science",
     "BSCS": "BS in Computer Science",
+
     "PSYCH": "BS in Psychology",
     "BS PSYCH": "BS in Psychology",
+
     "POLSAY": "BA in Political Science",
     "POLSCI": "BA in Political Science",
     "AB POLSCI": "BA in Political Science",
+    "AB PS": "BA in Political Science",
+    "ABPS": "BA in Political Science",
+    "BAPS": "BA in Political Science",
+    "BA PS": "BA in Political Science",
+
     "BAEL": "BA in English Language",
     "ABEL": "BA in English Language",
+
     "BACOMM": "BA in Communications",
     "COMM": "BA in Communications",
+
     "BIO": "BS in Biology",
     "BS BIO": "BS in Biology",
 }
+
 
 
 def norm_key(s: str) -> str:
@@ -219,12 +230,99 @@ def detect_intent(text: str) -> str:
     ):
         return "dept_head_one"
 
+    # Curriculum / subject-list questions (explicit words)
+    if any(w in tlow for w in ["subject", "subjects", "course", "courses", "curriculum"]):
+        has_year_hint = (
+            "year" in tlow
+            or "yr " in tlow
+            or any(x in tlow for x in ["1st", "2nd", "3rd", "4th", "first", "second", "third", "fourth"])
+        )
+        has_prog_hint = any(
+            x in tlow
+            for x in [
+                # Computer Science
+                "cs",
+                "computer science",
+                "bscs",
+                "bs cs",
+                # Psychology
+                "psych",
+                "psychology",
+                "bs psych",
+                # Biology
+                "bio",
+                "biology",
+                "bsbio",
+                "bs bio",
+                # Political Science
+                "political science",
+                "polsci",
+                "ab ps",
+                "abps",
+                "baps",
+                "ba ps",
+                # Communication
+                "communication",
+                "comm",
+                # English Language
+                "bael",
+                "abel",
+                "english language",
+            ]
+        )
+        if has_year_hint or has_prog_hint:
+            return "curriculum"
+
+    # Curriculum questions without explicit "subjects/courses" but with year + program
+    has_year_only = (
+        "year" in tlow
+        or "yr " in tlow
+        or any(x in tlow for x in ["1st", "2nd", "3rd", "4th", "first", "second", "third", "fourth"])
+    )
+    has_prog_only = any(
+        x in tlow
+        for x in [
+            # Computer Science
+            "cs",
+            "computer science",
+            "bscs",
+            "bs cs",
+            # Psychology
+            "psych",
+            "psychology",
+            "bs psych",
+            # Biology
+            "bio",
+            "biology",
+            "bsbio",
+            "bs bio",
+            # Political Science
+            "political science",
+            "polsci",
+            "ab ps",
+            "abps",
+            "baps",
+            "ba ps",
+            # Communication
+            "communication",
+            "comm",
+            # English Language
+            "bael",
+            "abel",
+            "english language",
+        ]
+    )
+    if has_year_only and has_prog_only:
+        return "curriculum"
+
+    # Prerequisites and units
     if "INTENT_PREREQ" in labels or "prereq" in tlow or "prerequisite" in tlow:
         return "prerequisites"
 
     if "INTENT_UNITS" in labels or "units" in tlow:
         return "units"
 
+    # Fallback: course info / single-course questions
     return "courseinfo"
 
 
@@ -245,14 +343,36 @@ def _extract_year(text: str) -> Optional[int]:
     return None
 
 
+def _extract_term(text: str) -> Optional[int]:
+    """
+    Extract a term/semester number (1–3) from text, based on phrases like
+    '1st semester', 'first trimester', '2nd term', etc.
+    """
+    tl = (text or "").lower()
+
+    # 1st / first
+    if re.search(r"\b(1st|first)\s+(sem|sem\.|semester|trimester|term)\b", tl):
+        return 1
+    # 2nd / second
+    if re.search(r"\b(2nd|second)\s+(sem|sem\.|semester|trimester|term)\b", tl):
+        return 2
+    # 3rd / third
+    if re.search(r"\b(3rd|third)\s+(sem|sem\.|semester|trimester|term)\b", tl):
+        return 3
+
+    return None
+
+
 def extract_entities(text: str) -> Dict[str, Optional[str]]:
     doc = nlp(text or "")
+
     ents: Dict[str, Optional[str]] = {
         "program": None,
         "course_title": None,
         "course_code": None,
         "department": None,
         "year_num": None,
+        "term_num": None,
     }
 
     m = CODE_RE.search(text or "")
@@ -270,5 +390,7 @@ def extract_entities(text: str) -> Dict[str, Optional[str]]:
             ents["department"] = span_text
 
     ents["year_num"] = _extract_year(text)
+    ents["term_num"] = _extract_term(text)
+
     return ents
 

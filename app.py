@@ -15,6 +15,7 @@ from data_api import (
     get_prerequisites,
     course_by_alias,
     find_course_any,
+    courses_for_plan,
     units_by_program_year,
     units_by_program_year_with_exclusions,
     list_department_heads,
@@ -228,6 +229,19 @@ def format_course_name_then_code(c: dict) -> str:
     if code:
         return code
     return "this course"
+
+
+def _term_label(term: int) -> str:
+    """
+    Human-friendly label for term/semester numbers.
+    Uses 'Trimester' for consistency with existing unit answers.
+    """
+    labels = {
+        1: "First Trimester",
+        2: "Second Trimester",
+        3: "Third Trimester",
+    }
+    return labels.get(term, f"Term {term}")
 
 
 def _is_generic_pathfit_query(user_text: str) -> bool:
@@ -586,7 +600,6 @@ def handle_prereq(user_text: str, ents: dict) -> str:
     courses = data["courses"]
     prereqs = data["prereqs"]
 
-    # Special cases: generic thesis and generic NSTP questions.
     if _is_generic_thesis_query(user_text):
         return _build_thesis_overview()
 
@@ -614,13 +627,14 @@ def handle_prereq(user_text: str, ents: dict) -> str:
 
     if not course:
         return (
-            "Which course do you mean? "
-            "Include the course code (e.g., CS 101) or the full title."
+            "I couldn’t quite tell which course you meant from that.\n\n"
+            "Could you include the course code or the full title so I can look it up? For example:\n"
+            "• Prerequisite of Microbiology (BIO 103 L/L)\n"
+            "• What are the prereqs for Purposive Communication (PCOM)?"
         )
 
     course_code = (course.get("course_code") or course.get("course_id") or "").strip().upper()
 
-    # Special case: user is asking directly about English Review or Math Review.
     if course_code == "IENG":
         return (
             "English Review (IENG) is a diagnostic-placement subject based on your "
@@ -655,7 +669,6 @@ def handle_prereq(user_text: str, ents: dict) -> str:
     for c in needed:
         c_code = (c.get("course_code") or c.get("course_id") or "").strip().upper()
 
-        # Always use "• Name (CODE)" for bullets.
         if c_code == "IENG":
             has_diagnostic = True
             diag_codes.add("IENG")
@@ -690,11 +703,12 @@ def handle_prereq(user_text: str, ents: dict) -> str:
 
     return "\n".join(lines)
 
-
 def handle_units(user_text: str, ents: dict) -> str:
     programs = data["programs"]
     plan = data["plan"]
     courses = data["courses"]
+
+    # Figure out program first.
     prog_row = None
     if ents.get("program"):
         res = fuzzy_best_program(programs, ents["program"], score_cutoff=60)
@@ -704,36 +718,220 @@ def handle_units(user_text: str, ents: dict) -> str:
         res = fuzzy_best_program(programs, user_text, score_cutoff=60)
         if res:
             _, _, prog_row = res
+
+    if not prog_row:
+        return (
+            "To check the units, I’ll need to know which program you’re asking about.\n\n"
+            "Some examples:\n"
+            "• BS Computer Science units\n"
+            "• BS Biology units\n"
+            "• BS Psychology units\n\n"
+            "Which program are you interested in?"
+        )
+
+    pid = prog_row["program_id"]
+    pname = prog_row["program_name"]
     year = ents.get("year_num")
-    if not prog_row or not year:
-        return "Please specify a program and year, e.g., 'How many units does 1st year Computer Science take?'."
-    # Get units with diagnostic course exclusions
-    total, by_sem, diagnostic_excluded = units_by_program_year_with_exclusions(
-        plan, courses, prog_row["program_id"], year
+
+    if not year:
+        return (
+            f"For {pname}, I’ll also need the year level so I can total the units.\n\n"
+            f"Some examples you can ask:\n"
+            f"• How many units does 1st year {pname} take?\n"
+            f"• How many units does 2nd year {pname} take?"
+        )
+
+    total_units, by_sem, diagnostic_excluded = units_by_program_year_with_exclusions(
+        plan, courses, pid, year
     )
-    if total == 0:
-        return f"No curriculum entries found for {prog_row['program_name']} year {year}."
-    # Convert year number to ordinal words
-    year_labels = {1: "first", 2: "second", 3: "third", 4: "fourth"}
-    year_text = year_labels.get(year, f"year {year}")
-    lines = [f"For {year_text} year {prog_row['program_name']}, the total is {total} units.\n"]
-    if by_sem:
-        trimester_names = {
-            "1": "First Trimester",
-            "2": "Second Trimester",
-            "3": "Third Trimester"
-        }
-        for sem in sorted(by_sem.keys(), key=int):
-            tri_name = trimester_names.get(sem, f"Trimester {sem}")
-            lines.append(f"  • {tri_name}: {by_sem[sem]} units")
-    # Disclaimer about diagnostic exclusion
+
+    year_labels = {1: "First year", 2: "Second year", 3: "Third year", 4: "Fourth year"}
+    year_label = year_labels.get(year, f"Year {year}")
+
+    if not by_sem:
+        return (
+            f"I couldn’t find unit data for {year_label} {pname} in the current curriculum plan."
+        )
+
+    lines = [f"Estimated total units for {year_label} {pname} (excluding diagnostic review subjects):"]
+    for sem, units in sorted(by_sem.items(), key=lambda kv: kv[0]):
+        sem_label = {"1": "First trimester", "2": "Second trimester", "3": "Third trimester"}.get(
+            sem, f"Trimester {sem}"
+        )
+        lines.append(f"• {sem_label}: {units} units")
+    lines.append(f"\nOverall total (excluding IMAT/IENG): {total_units} units")
+
     if diagnostic_excluded:
         lines.append(
-            "\nNote: Math Review (IMAT) and English Review (IENG) are not included in this count. "
-            "These courses are only required based on your diagnostic exam results. "
-            "For more information, contact the NWU Guidance Office via their Facebook page: "
-            "https://www.facebook.com/NWUGuidance"
+            "\nNote: Diagnostic review subjects like IMAT (Math Review) and IENG (English Review) "
+            "depend on your placement/diagnostic test results, so they’re not included here."
         )
+
+    return "\n".join(lines)
+
+
+def handle_curriculum(user_text: str, ents: dict) -> str:
+    programs = data["programs"]
+    plan = data["plan"]
+    courses = data["courses"]
+
+    tlow = (user_text or "").lower()
+
+    if any(x in tlow for x in ["bael", "abel", "ab english language", "ba english language", "ab english", "ba english", "english language"]):
+        dept_row = department_lookup(data["departments"], "Language and Literature")
+        head = (dept_row or {}).get("department_head")
+        if head:
+            return (
+                "The detailed curriculum plan for BA in English Language isn’t loaded in this system yet.\n\n"
+                "For now, it’s best to check directly with the Department of Language and Literature. "
+                f"You can start with the department head, {head}, for curriculum questions."
+            )
+        return (
+            "The detailed curriculum plan for BA in English Language isn’t loaded in this system yet.\n\n"
+            "For now, it’s best to check directly with the Department of Language and Literature "
+            "for curriculum questions."
+        )
+
+    # 1) Resolve program from entities or free text.
+    prog_row = None
+    if ents.get("program"):
+        res = fuzzy_best_program(programs, ents["program"], score_cutoff=60)
+        if res:
+            _, _, prog_row = res
+    if not prog_row:
+        res = fuzzy_best_program(programs, user_text, score_cutoff=60)
+        if res:
+            _, _, prog_row = res
+
+    if not prog_row:
+        return (
+            "I’m not sure which program you’re asking about yet.\n\n"
+            "Some examples I can help with are:\n"
+            "• BS Computer Science\n"
+            "• BS Biology\n"
+            "• BS Psychology\n"
+            "• BA Communication\n"
+            "• BA Political Science\n\n"
+            "Which program are you interested in?"
+        )
+
+    pid = prog_row["program_id"]
+    pname = prog_row["program_name"]
+
+    # 2) Check if we have any curriculum data for this program.
+    has_entries = any((entry.get("program_id") == pid) for entry in plan)
+    if not has_entries:
+        return (
+            f"The detailed curriculum plan for {pname} isn’t available in this system yet.\n\n"
+            "For the most accurate information, please coordinate with your program chair or "
+            "the Registrar’s Office."
+        )
+
+    year = ents.get("year_num")
+    term = ents.get("term_num")
+
+    # 3) If no specific year, ask the user to narrow it down with a human-friendly explanation.
+    if not year:
+        return (
+            f"I can list all the subjects for {pname}, but that would be a very long answer.\n\n"
+            f"To keep it readable, could you tell me which year level you’re looking at? For example:\n"
+            f"• 1st year {pname} subjects?\n"
+            f"• 2nd year {pname} courses?\n"
+            f"• 1st year {pname}, 2nd trimester subjects?"
+        )
+
+    # 4) Build course list for that year (and optionally specific term).
+    year_labels = {1: "First year", 2: "Second year", 3: "Third year", 4: "Fourth year"}
+    year_label = year_labels.get(year, f"Year {year}")
+
+    # Specific term requested.
+    if term:
+        term_courses = courses_for_plan(plan, courses, pid, year, term)
+        if not term_courses:
+            return (
+                f"I couldn’t find any curriculum entries for {year_label} {pname}, "
+                f"{_term_label(term)} in the current data."
+            )
+
+        lines: list[str] = [
+            f"Courses for {year_label} {pname}, {_term_label(term)}:"
+        ]
+
+        diag_codes: set[str] = set()
+
+        for c in term_courses:
+            code = (c.get("course_code") or c.get("course_id") or "").strip().upper()
+            if code in {"IMAT", "IENG"}:
+                diag_codes.add(code)
+            lines.append(f"• {format_course_name_then_code(c)}")
+
+        if diag_codes:
+            lines.append("")
+            if diag_codes == {"IENG"}:
+                lines.append(
+                    "Note: English Review (IENG) depends on your English diagnostic test results. "
+                    "Please inquire with the Guidance Office via their Facebook page "
+                    "https://www.facebook.com/NWUGuidance."
+                )
+            elif diag_codes == {"IMAT"}:
+                lines.append(
+                    "Note: Math Review (IMAT) depends on your Math diagnostic test results. "
+                    "Please inquire with the Guidance Office via their Facebook page "
+                    "https://www.facebook.com/NWUGuidance."
+                )
+            else:
+                lines.append(
+                    "Note: English Review (IENG) and Math Review (IMAT) depend on your diagnostic "
+                    "test results. Please inquire with the Guidance Office via their Facebook page "
+                    "https://www.facebook.com/NWUGuidance."
+                )
+
+        return "\n".join(lines)
+
+    # No specific term: list up to three terms for that year.
+    lines = [f"Courses for {year_label} {pname}:"]
+    any_term = False
+    diag_codes: set[str] = set()
+
+    for t in [1, 2, 3]:
+        term_courses = courses_for_plan(plan, courses, pid, year, t)
+        if not term_courses:
+            continue
+        any_term = True
+        lines.append("")
+        lines.append(_term_label(t) + ":")
+        for c in term_courses:
+            code = (c.get("course_code") or c.get("course_id") or "").strip().upper()
+            if code in {"IMAT", "IENG"}:
+                diag_codes.add(code)
+            lines.append(f"• {format_course_name_then_code(c)}")
+
+    if not any_term:
+        return (
+            f"I couldn’t find any curriculum entries for {year_label} {pname} in the current data."
+        )
+
+    if diag_codes:
+        lines.append("")
+        if diag_codes == {"IENG"}:
+            lines.append(
+                "Note: English Review (IENG) depends on your English diagnostic test results. "
+                "Please inquire with the Guidance Office via their Facebook page "
+                "https://www.facebook.com/NWUGuidance."
+            )
+        elif diag_codes == {"IMAT"}:
+            lines.append(
+                "Note: Math Review (IMAT) depends on your Math diagnostic test results. "
+                "Please inquire with the Guidance Office via their Facebook page "
+                "https://www.facebook.com/NWUGuidance."
+            )
+        else:
+            lines.append(
+                "Note: English Review (IENG) and Math Review (IMAT) depend on your diagnostic "
+                "test results. Please inquire with the Guidance Office via their Facebook page "
+                "https://www.facebook.com/NWUGuidance."
+            )
+
     return "\n".join(lines)
 
 
@@ -833,29 +1031,133 @@ def route(user_text: str) -> str:
         resolved = resolve_pending(user_text)
         if resolved:
             return resolved
+
     if _looks_like_payment(user_text):
         return _refer_university(channel_hint="finance")
+
     intent = detect_intent(user_text)
     ents = extract_entities(user_text)
     tlow = (user_text or "").lower().strip().rstrip("?!.")
+
     if tlow in {"department heads", "dept heads", "dept. heads", "different department heads"}:
         return handle_dept_heads_list_or_clarify(user_text, ents)
+
     if intent == "courseinfo" and _is_dept_headish(user_text):
         if ents.get("department"):
             return handle_dept_head_one(user_text, ents)
         return handle_dept_heads_list_or_clarify(user_text, ents)
+
+    # 5) Main intent handlers
     if intent == "prerequisites":
         return handle_prereq(user_text, ents)
+
     if intent == "units":
         return handle_units(user_text, ents)
+
+    if intent == "curriculum":
+        return handle_curriculum(user_text, ents)
+
     if intent == "dept_heads_list":
         return handle_dept_heads_list_or_clarify(user_text, ents)
+
     if intent == "dept_head_one":
         return handle_dept_head_one(user_text, ents)
+
+    plain = tlow
+    nonnames = {
+        "yes",
+        "yeah",
+        "yup",
+        "y",
+        "ok",
+        "okay",
+        "sure",
+        "alright",
+        "thanks",
+        "thank",
+        "thank you",
+        "tnx",
+        "ty",
+        "k",
+    }
+    if plain in nonnames:
+        return (
+            "Got your reply, but I'm not fully sure what you need yet.\n\n"
+            "Could you put it as a question so I can be more helpful? For example:\n"
+            "• BS Biology subjects?\n"
+            "• 1st year BSCS, 2nd trimester subjects?\n"
+            "• Prerequisite of Microbiology (BIO 103 L/L)?\n"
+            "• How many units does 1st year BS Biology take?"
+        )
+
+    if (
+        intent == "courseinfo"
+        and ents.get("program")
+        and not ents.get("course_code")
+        and not ents.get("course_title")
+    ):
+        programs = data["programs"]
+        prog_row = None
+
+        res = fuzzy_best_program(programs, ents["program"], score_cutoff=70)
+        if res:
+            _, _, prog_row = res
+
+        if not prog_row:
+            res = fuzzy_best_program(programs, user_text, score_cutoff=70)
+            if res:
+                _, _, prog_row = res
+
+        if prog_row:
+            pname = prog_row.get("program_name") or "this program"
+            return (
+                f"It sounds like you're asking about {pname}, but I'm not sure which part you're interested in.\n\n"
+                f"Could you tell me what you want to know about {pname}? For example:\n"
+                f"• 1st year {pname} subjects?\n"
+                f"• Prerequisite of a specific course in {pname}?\n"
+                f"• How many units does 1st year {pname} take?"
+            )
+
     c = find_course_any(data, user_text)
     if c:
-        return f"{format_course(c)} — {c.get('units', 'N/A')} units."
-    return "Could you clarify what you need? Happy to help with prerequisites, unit loads, or department leadership."
+        short_tokens = len((user_text or "").split())
+
+        has_explicit_course_word = any(
+            w in tlow for w in ["subject", "subjects", "course", "courses", "curriculum"]
+        )
+        has_units_or_prereq_word = any(
+            w in tlow
+            for w in ["unit", "units", "prereq", "prereqs", "prerequisite", "prerequisites"]
+        )
+        looks_like_code = bool(CODE_RE.search(user_text or ""))
+
+        # Treat as a clear course question only if:
+        # - they explicitly talk about subjects/courses/units/prereqs, or
+        # - they use something that looks like a course code (e.g., BIO 103), or
+        # - the query has enough context (3+ tokens).
+        if has_explicit_course_word or has_units_or_prereq_word or looks_like_code or short_tokens >= 3:
+            return f"{format_course(c)} — {c.get('units', 'NA')} units."
+
+        # Otherwise, the match is too ambiguous (e.g., "bio", "cs", "yes").
+        return (
+            "I might be able to match that to a course, but I'm not completely sure what you need yet.\n\n"
+            "Could you say a bit more so I don't guess wrong? For example:\n"
+            "• BS Biology subjects?\n"
+            "• 1st year BS Biology, 2nd trimester subjects?\n"
+            "• Prerequisite of Microbiology (BIO 103 L/L)?\n"
+            "• How many units does 1st year BSCS take?"
+        )
+
+    # 9) No clear match at all
+    return (
+        "I'm not complete sure what you need yet based on that message.\n\n"
+        "Could you rephrase it with more detail? Here are some examples of questions I can answer:\n"
+        "• BS Computer Science subjects?\n"
+        "• 1st year BS Biology subjects?\n"
+        "• Prerequisite of Purposive Communication (PCOM)?\n"
+        "• How many units does 2nd year BS Psychology take?\n"
+        "• Who is the head of the Computer Science department?"
+    )
 
 
 placeholder = "Say hello, share your name, or ask about prerequisites, unit loads, or department leadership…"
