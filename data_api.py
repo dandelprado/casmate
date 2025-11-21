@@ -63,6 +63,31 @@ def _normalize_phrase(s: str) -> str:
     return " ".join(parts)
 
 
+def _clean_course_query(text: str) -> str:
+    base = _normalize_phrase(text)
+    if not base:
+        return ""
+
+    tokens = base.split()
+
+    remove = {
+        "what", "whats", "what's",
+        "is", "are", "the",
+        "of", "for",
+        "subject", "course", "subjects", "courses",
+        "prereq", "prereqs", "prerequisite", "prerequisites",
+        "requirement", "requirements",
+        "in", "about", "regarding",
+        "do", "does", "should", "need", "take",
+        "before", "prior",
+    }
+
+    kept = [t for t in tokens if t not in remove]
+
+    # If everything was stripped, fall back to the normalized base.
+    return " ".join(kept) if kept else base
+
+
 def _read_json_clean(path: Path) -> List[Dict]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -224,20 +249,77 @@ def fuzzy_top_course_titles(
     return [(m, s, choices[m]) for m, s, _ in results]
 
 
+def _keyword_match_course(courses: List[Dict], text: str) -> Optional[Dict]:
+    clean = _clean_course_query(text)
+    if not clean:
+        return None
+
+    q_tokens = set(clean.split())
+    if not q_tokens:
+        return None
+
+    best_course: Optional[Dict] = None
+    best_overlap = 0
+
+    for c in courses:
+        title = c.get("course_title") or ""
+        norm_title = _normalize_phrase(title)
+        title_tokens = set(norm_title.split())
+        overlap = len(q_tokens & title_tokens)
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_course = c
+
+    # Require at least one overlapping token to avoid nonsense matches.
+    if best_overlap > 0:
+        return best_course
+
+    return None
+
+
 def course_by_alias(data: Dict, alias: str) -> Optional[Dict]:
     if not alias:
         return None
+
     courses = data.get("courses", [])
+    if not courses:
+        return None
+
+    # 1) Try keyword/token overlap on the cleaned query.
+    kw_hit = _keyword_match_course(courses, alias)
+    if kw_hit:
+        return kw_hit
+
+    # 2) Try fuzzy match on the raw text.
     fb = fuzzy_best_course_title(courses, alias, score_cutoff=70)
     if fb:
         return fb[2]
+
+    # 3) Try fuzzy match again on the cleaned text.
+    clean = _clean_course_query(alias)
+    if clean and clean != alias:
+        fb = fuzzy_best_course_title(courses, clean, score_cutoff=70)
+        if fb:
+            return fb[2]
+
     return None
 
 
 def find_course_any(data: Dict, text: str) -> Optional[Dict]:
     courses = data.get("courses", [])
-    if not text:
+    if not text or not courses:
         return None
+
+    text_upper = (text or "").upper()
+    no_space = text_upper.replace(" ", "")
+
+    for c in courses:
+        code = (c.get("course_code") or c.get("course_id") or "").upper()
+        if not code:
+            continue
+        code_no_space = code.replace(" ", "")
+        if code in text_upper or code_no_space in no_space:
+            return c
 
     m = CODE_RE.search(text or "")
     if m:
@@ -251,6 +333,11 @@ def find_course_any(data: Dict, text: str) -> Optional[Dict]:
         return alias_hit
 
     fb = fuzzy_best_course_title(courses, text, score_cutoff=70)
+    if not fb:
+        clean = _clean_course_query(text)
+        if clean and clean != text:
+            fb = fuzzy_best_course_title(courses, clean, score_cutoff=70)
+
     if fb:
         return fb[2]
 

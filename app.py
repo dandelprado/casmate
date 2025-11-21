@@ -115,8 +115,17 @@ NWU_OFFICIAL_URL = "https://www.facebook.com/NWUofficial"
 NWU_FINANCE_URL = "https://www.facebook.com/NWUFinance"
 
 
-def _format_course(c: dict) -> str:
+def format_course(c: dict) -> str:
     return f"{c.get('course_code', '').strip()} — {c.get('course_title', '').strip()}"
+
+
+def _is_diagnostic_review_course(course: dict) -> bool:
+    """
+    Return True if the course is one of the diagnostic-based review subjects
+    (English Review IENG or Math Review IMAT).
+    """
+    code = (course.get("course_code") or course.get("course_id") or "").strip().upper()
+    return code in {"IENG", "IMAT"}
 
 
 def _format_head_row(r: dict) -> str:
@@ -197,26 +206,488 @@ def _refer_university(channel_hint: Optional[str] = None) -> str:
     return "For colleges outside CAS, please reach out through the University's official channel."
 
 
+def format_course_name_then_code(c: dict) -> str:
+    """
+    Return 'Course Title (CODE)' or fall back sensibly if title/code are missing.
+    Includes a CAS-specific cleanup for NSTP 2 so ROTC is not shown.
+    """
+    title = (c.get("course_title") or "").strip()
+    code = (c.get("course_code") or c.get("course_id") or "").strip()
+    upper_code = code.upper()
+
+    if upper_code == "NSTP 2":
+        clean_title = "Civic Welfare Training 2"
+        if code:
+            return f"{clean_title} ({code})"
+        return clean_title
+
+    if title and code:
+        return f"{title} ({code})"
+    if title:
+        return title
+    if code:
+        return code
+    return "this course"
+
+
+def _is_generic_pathfit_query(user_text: str) -> bool:
+    """
+    Return True when the user is asking a very general PATHFIT question like
+    'what is the prerequisite of pathfit', without specifying PATHFIT 1/2/3/4.
+    """
+    if not user_text:
+        return False
+
+    t = re.sub(r"[^a-z0-9\s]", " ", user_text.lower())
+    tokens = [tok for tok in t.split() if tok]
+
+    if "pathfit" not in tokens:
+        return False
+
+    # If they explicitly mention a number (e.g., 'pathfit 2'), treat it as specific.
+    if any(tok in {"1", "2", "3", "4", "1st", "2nd", "3rd", "4th"} for tok in tokens):
+        return False
+
+    allowed = {
+        "what", "whats", "what's",
+        "is", "are",
+        "the", "a", "an",
+        "of", "for",
+        "subject", "course", "subject?", "course?",
+        "prereq", "prereqs", "prerequisite", "prerequisites",
+        "requirement", "requirements",
+        "in", "about",
+        "this", "that",
+    }
+
+    others = [tok for tok in tokens if tok not in allowed and tok != "pathfit"]
+    return len(others) == 0
+
+
+def _is_generic_nstp_query(user_text: str) -> bool:
+    """
+    Return True when the user is asking a very general NSTP question like
+    'what is the prerequisite of nstp', without specifying NSTP 1 or NSTP 2.
+    """
+    if not user_text:
+        return False
+
+    t = re.sub(r"[^a-z0-9\s]", " ", user_text.lower())
+    tokens = [tok for tok in t.split() if tok]
+
+    if "nstp" not in tokens:
+        return False
+
+    # If they explicitly mention 1 or 2 (e.g., 'nstp 2'), treat it as specific.
+    if any(tok in {"1", "2", "1st", "2nd"} for tok in tokens):
+        return False
+
+    allowed = {
+        "what", "whats", "what's",
+        "is", "are",
+        "the", "a", "an",
+        "of", "for",
+        "subject", "course", "subject?", "course?",
+        "prereq", "prereqs", "prerequisite", "prerequisites",
+        "requirement", "requirements",
+        "in", "about",
+        "this", "that",
+    }
+
+    others = [tok for tok in tokens if tok not in allowed and tok != "nstp"]
+    return len(others) == 0
+
+
+def _build_nstp_overview() -> str:
+    """
+    Summarize NSTP 1 and NSTP 2, showing that NSTP 2 requires NSTP 1.
+    """
+    courses = data["courses"]
+    prereqs = data["prereqs"]
+
+    nstp1 = find_course_by_code(courses, "NSTP 1")
+    nstp2 = find_course_by_code(courses, "NSTP 2")
+
+    lines: list[str] = [
+        "The National Service Training Program (NSTP) at NWU has two components:"
+    ]
+
+    if nstp1:
+        lines.append(f"• {format_course_name_then_code(nstp1)} – no listed prerequisites.")
+    else:
+        lines.append("• NSTP 1 – no listed prerequisites.")
+
+    if nstp2:
+        needed2 = get_prerequisites(prereqs, courses, nstp2.get("course_id"))
+        if needed2:
+            prereq_list = ", ".join(
+                format_course_name_then_code(p) for p in needed2
+            )
+            lines.append(
+                f"• {format_course_name_then_code(nstp2)} – prerequisite: {prereq_list}."
+            )
+        else:
+            lines.append(
+                f"• {format_course_name_then_code(nstp2)} – no listed prerequisites."
+            )
+    else:
+        lines.append("• NSTP 2 – prerequisite: NSTP 1.")
+
+    return "\n".join(lines)
+
+def _is_generic_thesis_query(user_text: str) -> bool:
+    """
+    Return True when the user is asking a very general 'thesis' question,
+    like 'what is the prerequisite of thesis', without specifying program
+    or a particular thesis course.
+    """
+    if not user_text:
+        return False
+
+    t = re.sub(r"[^a-z\s]", " ", user_text.lower())
+    tokens = [tok for tok in t.split() if tok]
+
+    if "thesis" not in tokens:
+        return False
+
+    # Words that are allowed in a generic thesis question.
+    allowed = {
+        "what", "whats", "what's",
+        "is", "are",
+        "the", "a", "an",
+        "of", "for",
+        "subject", "course", "subject?", "course?",
+        "prereq", "prereqs", "prerequisite", "prerequisites",
+        "requirement", "requirements",
+        "in", "about",
+        "this", "that",
+    }
+
+    others = [tok for tok in tokens if tok not in allowed and tok != "thesis"]
+    # If they only say things like "what is the prerequisite of thesis",
+    # treat it as a generic thesis overview question.
+    return len(others) == 0
+
+
+def _build_pathfit_overview() -> str:
+    """
+    Summarize PATHFIT 1–4, showing their prerequisites from the CAS data.
+    """
+    courses = data["courses"]
+    prereqs = data["prereqs"]
+
+    # Collect PATHFIT courses by code.
+    pathfit_courses = []
+    for c in courses:
+        code = (c.get("course_code") or c.get("course_id") or "").strip().upper()
+        if code.startswith("PATHFIT"):
+            pathfit_courses.append(c)
+
+    if not pathfit_courses:
+        return (
+            "There are no PATHFIT courses listed in the current CAS curriculum data."
+        )
+
+    # Sort them by numeric suffix (1–4) if possible.
+    def _pathfit_key(c: dict) -> int:
+        code = (c.get("course_code") or c.get("course_id") or "").strip().upper()
+        parts = code.split()
+        for p in parts:
+            if p.isdigit():
+                return int(p)
+        return 0
+
+    pathfit_courses = sorted(pathfit_courses, key=_pathfit_key)
+
+    lines: list[str] = [
+        "The PATHFIT (Physical Fitness) subjects are sequential:"
+    ]
+
+    for c in pathfit_courses:
+        name_code = format_course_name_then_code(c)
+        needed = get_prerequisites(prereqs, courses, c.get("course_id"))
+
+        if not needed:
+            lines.append(f"• {name_code} – no listed prerequisites.")
+        elif len(needed) == 1:
+            lines.append(
+                f"• {name_code} – prerequisite: "
+                f"{format_course_name_then_code(needed[0])}."
+            )
+        else:
+            prereq_list = ", ".join(
+                format_course_name_then_code(p) for p in needed
+            )
+            lines.append(
+                f"• {name_code} – prerequisites: {prereq_list}."
+            )
+
+    return "\n".join(lines)
+
+
+def _build_thesis_overview() -> str:
+    """
+    Build an overview answer listing all thesis- and thesis-like courses
+    across CAS, grouped by program, each with its prerequisites (if any).
+    """
+    courses = data["courses"]
+    prereqs = data["prereqs"]
+    programs = data["programs"]
+    plan = data["plan"]
+
+    # 1) Collect all thesis / thesis-like courses.
+    thesis_courses_by_code: dict[str, dict] = {}
+    for c in courses:
+        title = (c.get("course_title") or "").strip().lower()
+        code = (c.get("course_code") or c.get("course_id") or "").strip().upper()
+        if not code:
+            continue
+
+        if "thesis" in title:
+            thesis_courses_by_code[code] = c
+            continue
+        if "thesis/special project" in title:
+            thesis_courses_by_code[code] = c
+            continue
+        if "research in psychology" in title:
+            thesis_courses_by_code[code] = c
+            continue
+
+    if not thesis_courses_by_code:
+        return (
+            "There are no thesis or thesis-related research courses listed in the "
+            "current CAS curriculum data."
+        )
+
+    thesis_codes = set(thesis_courses_by_code.keys())
+
+    # 2) Map each thesis course code to the program(s) it appears in using the flattened plan.
+    course_programs: dict[str, set[str]] = {}
+    for entry in plan:
+        cid = (entry.get("course_id") or "").strip().upper()
+        if cid in thesis_codes:
+            pid = entry.get("program_id")
+            if not pid:
+                continue
+            course_programs.setdefault(cid, set()).add(pid)
+
+    # 3) Group thesis courses by program, preserving program order as in programs.json.
+    lines: list[str] = [
+        "Here are thesis and thesis-related research courses across CAS, "
+        "grouped by program, with their prerequisites if any:"
+    ]
+
+    program_by_id = {p.get("program_id"): p for p in programs}
+
+    # Helper: sort thesis courses within a program by year/term order from the plan.
+    def _sorted_thesis_for_program(pid: str) -> list[dict]:
+        rows = []
+        for entry in plan:
+            if entry.get("program_id") != pid:
+                continue
+            cid = (entry.get("course_id") or "").strip().upper()
+            if cid not in thesis_codes:
+                continue
+            rows.append(
+                (
+                    int(entry.get("year_level") or 0),
+                    int(entry.get("term") or 0),
+                    cid,
+                )
+            )
+        seen = set()
+        ordered: list[dict] = []
+        for year, term, cid in sorted(rows):
+            if cid in seen:
+                continue
+            seen.add(cid)
+            course = thesis_courses_by_code.get(cid)
+            if course:
+                ordered.append(course)
+        return ordered
+
+    any_output = False
+
+    for prog in programs:
+        pid = prog.get("program_id")
+        pname = prog.get("program_name") or ""
+        if not pid:
+            continue
+
+        thesis_for_prog = _sorted_thesis_for_program(pid)
+        if not thesis_for_prog:
+            continue
+
+        any_output = True
+        lines.append("")
+        lines.append(
+            f"For {pname}, the thesis and thesis-related research courses are:"
+        )
+
+        for c in thesis_for_prog:
+            name_code = format_course_name_then_code(c)
+            needed = get_prerequisites(prereqs, courses, c.get("course_id"))
+
+            if not needed:
+                lines.append(f"• {name_code} – no listed prerequisites.")
+            elif len(needed) == 1:
+                lines.append(
+                    f"• {name_code} – prerequisite: "
+                    f"{format_course_name_then_code(needed[0])}."
+                )
+            else:
+                prereq_list = ", ".join(
+                    format_course_name_then_code(p) for p in needed
+                )
+                lines.append(
+                    f"• {name_code} – prerequisites: {prereq_list}."
+                )
+
+    # 4) Handle any thesis courses that, for some reason, are not tied to a program in the plan.
+    leftover = [
+        c for code, c in thesis_courses_by_code.items()
+        if code not in course_programs
+    ]
+    if leftover:
+        lines.append("")
+        lines.append(
+            "The following thesis or thesis-related courses are listed but not "
+            "mapped to a specific CAS program in the current plan:"
+        )
+        for c in leftover:
+            name_code = format_course_name_then_code(c)
+            needed = get_prerequisites(prereqs, courses, c.get("course_id"))
+            if not needed:
+                lines.append(f"• {name_code} – no listed prerequisites.")
+            elif len(needed) == 1:
+                lines.append(
+                    f"• {name_code} – prerequisite: "
+                    f"{format_course_name_then_code(needed[0])}."
+                )
+            else:
+                prereq_list = ", ".join(
+                    format_course_name_then_code(p) for p in needed
+                )
+                lines.append(
+                    f"• {name_code} – prerequisites: {prereq_list}."
+                )
+
+    if not any_output:
+        # Fallback, though this shouldn't normally happen.
+        return (
+            "There are thesis and thesis-related research courses in the data, "
+            "but they are not currently mapped to any CAS program in the curriculum plan."
+        )
+
+    return "\n".join(lines)
+
+
 def handle_prereq(user_text: str, ents: dict) -> str:
     courses = data["courses"]
     prereqs = data["prereqs"]
+
+    # Special cases: generic thesis and generic NSTP questions.
+    if _is_generic_thesis_query(user_text):
+        return _build_thesis_overview()
+
+    if _is_generic_nstp_query(user_text):
+        return _build_nstp_overview()
+
+    if _is_generic_pathfit_query(user_text):
+        return _build_pathfit_overview()
+
     course = None
+
+    # 1) If NLU extracted a course code, use that first.
     if ents.get("course_code"):
         course = find_course_by_code(courses, ents["course_code"])
+
+    # 2) If NLU extracted a course title span, try fuzzy-match on that.
     if not course and ents.get("course_title"):
         fb = fuzzy_best_course_title(courses, ents["course_title"], score_cutoff=70)
         if fb:
             course = fb[2]
+
+    # 3) Fallback: search anywhere in the user text.
     if not course:
         course = find_course_any(data, user_text)
+
     if not course:
-        return "Which course do you mean? Include the course code (e.g., CS101) or the full title."
-    need = get_prerequisites(prereqs, courses, course.get("course_id"))
-    if not need:
-        return f"{_format_course(course)} has no listed prerequisites."
-    lines = [f"Prerequisites for {_format_course(course)}:"]
-    for c in need:
-        lines.append(f"- {_format_course(c)}")
+        return (
+            "Which course do you mean? "
+            "Include the course code (e.g., CS 101) or the full title."
+        )
+
+    course_code = (course.get("course_code") or course.get("course_id") or "").strip().upper()
+
+    # Special case: user is asking directly about English Review or Math Review.
+    if course_code == "IENG":
+        return (
+            "English Review (IENG) is a diagnostic-placement subject based on your "
+            "English diagnostic test results. Please inquire with the Guidance Office "
+            "via their Facebook page https://www.facebook.com/NWUGuidance to confirm "
+            "whether you need to take it."
+        )
+
+    if course_code == "IMAT":
+        return (
+            "Math Review (IMAT) is a diagnostic-placement subject based on your "
+            "Math diagnostic test results. Please inquire with the Guidance Office "
+            "via their Facebook page https://www.facebook.com/NWUGuidance to confirm "
+            "whether you need to take it."
+        )
+
+    needed = get_prerequisites(prereqs, courses, course.get("course_id"))
+    if not needed:
+        heading = format_course_name_then_code(course)
+        return f"{heading} has no listed prerequisites."
+
+    heading = format_course_name_then_code(course)
+
+    if len(needed) == 1:
+        lines: list[str] = [f"Prerequisite of {heading}:"]
+    else:
+        lines = [f"Prerequisites of {heading}:"]
+
+    has_diagnostic = False
+    diag_codes: set[str] = set()
+
+    for c in needed:
+        c_code = (c.get("course_code") or c.get("course_id") or "").strip().upper()
+
+        # Always use "• Name (CODE)" for bullets.
+        if c_code == "IENG":
+            has_diagnostic = True
+            diag_codes.add("IENG")
+            lines.append("• English Review (IENG)")
+        elif c_code == "IMAT":
+            has_diagnostic = True
+            diag_codes.add("IMAT")
+            lines.append("• Math Review (IMAT)")
+        else:
+            lines.append(f"• {format_course_name_then_code(c)}")
+
+    if has_diagnostic:
+        lines.append("")
+        if diag_codes == {"IENG"}:
+            lines.append(
+                "Note: English Review (IENG) depends on your English diagnostic "
+                "test results. Please inquire with the Guidance Office via their "
+                "Facebook page https://www.facebook.com/NWUGuidance."
+            )
+        elif diag_codes == {"IMAT"}:
+            lines.append(
+                "Note: Math Review (IMAT) depends on your Math diagnostic "
+                "test results. Please inquire with the Guidance Office via their "
+                "Facebook page https://www.facebook.com/NWUGuidance."
+            )
+        else:
+            lines.append(
+                "Note: English Review (IENG) and Math Review (IMAT) depend on your "
+                "diagnostic test results. Please inquire with the Guidance Office "
+                "via their Facebook page https://www.facebook.com/NWUGuidance."
+            )
+
     return "\n".join(lines)
 
 
@@ -383,7 +854,7 @@ def route(user_text: str) -> str:
         return handle_dept_head_one(user_text, ents)
     c = find_course_any(data, user_text)
     if c:
-        return f"{_format_course(c)} — {c.get('units', 'N/A')} units."
+        return f"{format_course(c)} — {c.get('units', 'N/A')} units."
     return "Could you clarify what you need? Happy to help with prerequisites, unit loads, or department leadership."
 
 
