@@ -68,14 +68,31 @@ def build_gazetteers(
     courses: List[Dict],
     departments: Optional[List[Dict]] = None,
 ) -> None:
+    """
+    Build spaCy PhraseMatcher patterns for:
+      - PROG: program names and abbreviations
+      - COURSETITLE: full course titles (from JSON only)
+      - DEPT: department names and aliases
+
+    All hand-written course aliases like 'data struct', 'calc', 'psych',
+    and 'bio' have been removed so this function only depends on your data.
+    """
+
+    # ----- Programs (PROG) -----
     if "PROG" in phrase_matcher:
         phrase_matcher.remove("PROG")
 
-    prog_docs = [nlp(p["program_name"]) for p in programs if p.get("program_name")]
-    base_docs = []
+    prog_docs = [
+        nlp(p["program_name"])
+        for p in programs
+        if p.get("program_name")
+    ]
+    base_docs: List = []
+
     for p in programs:
         name = p.get("program_name") or ""
         low = name.lower()
+        # Also index program names without leading "BS " / "BA "
         if low.startswith("bs "):
             base_docs.append(nlp(name[3:]))
         elif low.startswith("ba "):
@@ -83,46 +100,39 @@ def build_gazetteers(
 
     abbrev_docs = [nlp(k) for k in PROGRAM_ABBREVIATIONS.keys()]
     all_prog_docs = prog_docs + base_docs + abbrev_docs
+
     if all_prog_docs:
         phrase_matcher.add("PROG", all_prog_docs)
 
+    # ----- Course titles (COURSETITLE) -----
     if "COURSETITLE" in phrase_matcher:
         phrase_matcher.remove("COURSETITLE")
 
-    title_docs = [nlp(c["course_title"]) for c in courses if c.get("course_title")]
-    short_docs = []
-    for c in courses:
-        t = (c.get("course_title") or "").lower()
-        if "data structure" in t or "data structures" in t:
-            for v in ["data struct", "datastruct", "data structure", "data structures", "ds", "dsa"]:
-                short_docs.append(nlp(v))
-        if "calculus" in t:
-            for v in ["calc 1", "cal 1", "calculus 1", "calc i", "calculus i", "calc"]:
-                short_docs.append(nlp(v))
-        if "psychology" in t:
-            for v in ["psych", "intro psych"]:
-                short_docs.append(nlp(v))
-        if "biology" in t:
-            for v in ["bio", "general bio"]:
-                short_docs.append(nlp(v))
+    # Only index the actual course titles from courses.json
+    title_docs = [
+        nlp(c["course_title"])
+        for c in courses
+        if c.get("course_title")
+    ]
 
-    all_course_docs = title_docs + short_docs
-    if all_course_docs:
-        phrase_matcher.add("COURSETITLE", all_course_docs)
+    if title_docs:
+        phrase_matcher.add("COURSETITLE", title_docs)
 
+    # ----- Departments (DEPT) -----
     if "DEPT" in phrase_matcher:
         phrase_matcher.remove("DEPT")
 
     dept_docs = [nlp(x) for x in DEPT_ALIASES]
+
     if departments:
         dept_docs += [
             nlp(d.get("department_name") or "")
             for d in departments
             if d.get("department_name")
         ]
+
     if dept_docs:
         phrase_matcher.add("DEPT", dept_docs)
-
 
 def add_lower_in(name: str, words: List[str]) -> None:
     matcher.add(name, [[{"LOWER": {"IN": words}}]])

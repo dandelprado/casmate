@@ -1,0 +1,4650 @@
+app.py
+
+
+import re
+from pathlib import Path
+from typing import Optional
+
+import streamlit as st
+from rapidfuzz import fuzz
+
+from chat_ui import getchatbubblehtml, getfooterhtml
+
+from data_api import (
+    load_all,
+    find_course_by_code,
+    fuzzy_best_program,
+    fuzzy_best_course_title,
+    get_prerequisites,
+    course_by_alias,
+    find_course_any,
+    courses_for_plan,
+    units_by_program_year,
+    units_by_program_year_with_exclusions,
+    list_department_heads,
+    get_department_head_by_name,
+    department_lookup,
+    get_dept_role_label,
+    get_cas_dean,
+)
+from nlu_rules import (
+    build_gazetteers,
+    detect_intent,
+    extract_entities,
+)
+
+
+def load_css_rel_path(css_path: Path):
+    relpath = (Path(__file__).parent / css_path).resolve()
+    if relpath.exists():
+        css = relpath.read_text(encoding="utf-8")
+        st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+
+
+st.set_page_config(page_title="CASmate Chat", layout="centered")
+load_css_rel_path(Path("styles.css"))
+
+
+@st.cache_data(show_spinner=False)
+def bootstrap_data():
+    data = load_all()
+    build_gazetteers(data["programs"], data["courses"], data["departments"])
+    return data
+
+
+data = bootstrap_data()
+
+if "user_name" not in st.session_state:
+    st.session_state.user_name = None
+if "did_intro_prompt" not in st.session_state:
+    st.session_state.did_intro_prompt = False
+if "chat" not in st.session_state:
+    st.session_state.chat = []
+if "awaiting_dept_scope" not in st.session_state:
+    st.session_state.awaiting_dept_scope = False
+if "pending_intent" not in st.session_state:
+    st.session_state.pending_intent = None
+if "awaiting_college_scope" not in st.session_state:
+    st.session_state.awaiting_college_scope = False
+
+
+def render_header():
+    st.markdown(
+        """
+        <div class="hero">
+          <h1 class="hero-title gradient-text">CASmate — College of Arts & Sciences Assistant</h1>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+render_header()
+
+
+def render_message(sender, message):
+    st.markdown(
+        getchatbubblehtml(sender, message, user_name=st.session_state.user_name),
+        unsafe_allow_html=True
+    )
+
+
+if not st.session_state.did_intro_prompt:
+    st.session_state.chat.append({"sender": "CASmate", "message": "Hello! I'm CASmate. What's your name?"})
+    st.session_state.did_intro_prompt = True
+
+for msg in st.session_state.chat:
+    render_message(msg["sender"], msg["message"])
+
+CODE_RE = re.compile(r"\b([A-Za-z]{2,4})-?(\d{2,3})\b")
+GREETINGS = {
+    "hi", "hello", "hey", "hiya", "yo", "howdy", "good morning", "good afternoon", "good evening",
+    "greetings", "sup", "morning", "afternoon", "evening"
+}
+NON_NAMES = {"thanks", "thank you", "ok", "okay", "pls", "please", "yes", "no"}
+
+COLLEGE_ALIASES = {
+    "CAS": ["CAS", "COLLEGE OF ARTS AND SCIENCES", "COLLEGE OF ARTS & SCIENCES"],
+    "CCJE": ["CCJE", "COLLEGE OF CRIMINAL JUSTICE EDUCATION"],
+    "COL": ["COL", "COLLEGE OF LAW"],
+    "COBE": ["COBE", "COLLEGE OF BUSINESS EDUCATION"],
+    "COME": ["COME", "COLLEGE OF MARITIME EDUCATION"],
+    "CTE": ["CTE", "COLLEGE OF TEACHER EDUCATION"],
+    "CAHS": ["CAHS", "COLLEGE OF ALLIED HEALTH SCIENCES"],
+    "CIHTM": ["CIHTM", "COLLEGE OF INTERNATIONAL HOSPITALITY AND TOURISM MANAGEMENT"],
+    "CEAT": ["CEAT", "COLLEGE OF ENGINEERING", "COLLEGE OF ENGINEERING, ARCHITECTURE, AND TECHNOLOGY", "COLLEGE OF ENGINEERING ARCHITECTURE AND TECHNOLOGY"],
+}
+
+NWU_OFFICIAL_URL = "https://www.facebook.com/NWUofficial"
+NWU_FINANCE_URL = "https://www.facebook.com/NWUFinance"
+
+
+def format_course(c: dict) -> str:
+    return f"{c.get('course_code', '').strip()} — {c.get('course_title', '').strip()}"
+
+
+def _is_diagnostic_review_course(course: dict) -> bool:
+    """
+    Return True if the course is one of the diagnostic-based review subjects
+    (English Review IENG or Math Review IMAT).
+    """
+    code = (course.get("course_code") or course.get("course_id") or "").strip().upper()
+    return code in {"IENG", "IMAT"}
+
+
+def _format_head_row(r: dict) -> str:
+    name = r.get("department_name", "")
+    head = r.get("department_head", "")
+    flag = (r.get("dean_flag") or "N").upper()
+    if flag == "Y":
+        return f"Dean (CAS): {head}"
+    return f"{name}: {head}"
+
+
+def _is_dept_headish(text: str) -> bool:
+    t = (text or "").lower()
+    dept_like = any(x in t for x in ["department", "dept", "dept.", "deprt", "deprtm", "detp"])
+    head_like = any(x in t for x in ["head", "haed", "hed", "chair", "dean"])
+    fuzzy_dept = fuzz.partial_ratio(t, "department") >= 80 or fuzz.partial_ratio(t, "dept") >= 80
+    fuzzy_head = fuzz.partial_ratio(t, "head") >= 80
+    return (dept_like or fuzzy_dept) and (head_like or fuzzy_head)
+
+
+def _looks_like_greeting(text: str) -> bool:
+    t = (text or "").strip().lower()
+    t = re.sub(r"[!.\s]+$", "", t)
+    return t in GREETINGS
+
+
+def _clean_as_name(s: str) -> str:
+    t = re.sub(r"[^A-Za-z\-\s']", " ", s or "").strip()
+    t = re.sub(r"\s+", " ", t)
+    return t.title()
+
+
+def _extract_name(text: str) -> Optional[str]:
+    t = (text or "").strip()
+    if _looks_like_greeting(t) or t.lower() in NON_NAMES:
+        return None
+    p = re.compile(r"^(?:my\s+name\s+is|i\s*am|i'm|im|call\s+me|this\s+is)\s+([A-Za-z][A-Za-z'\-\s]{0,40})[.!?]*$", re.IGNORECASE)
+    m = p.match(t)
+    if m:
+        return _clean_as_name(m.group(1))
+    blacklist = {"units", "prereq", "prerequisite", "department", "dept", "head", "program", "year", "semester", "course", "dean"}
+    if "?" not in t and CODE_RE.search(t) is None:
+        tokens = re.findall(r"[A-Za-z][A-Za-z'\-]*", t)
+        if 1 <= len(tokens) <= 3:
+            cand = " ".join(tokens)
+            low = cand.lower()
+            if low not in GREETINGS and all(w not in blacklist for w in low.split()):
+                return _clean_as_name(cand)
+    return None
+
+
+def _looks_like_question(text: str) -> bool:
+    t = (text or "").strip().lower()
+    if "?" in t: return True
+    if any(t.startswith(w) for w in ["who", "what", "how", "where", "when"]): return True
+    if any(k in t for k in ["units", "prereq", "prerequisite", "department", "dept", "head", "program", "year", "semester", "course", "dean"]): return True
+    if CODE_RE.search(t): return True
+    return False
+
+
+def _looks_like_payment(text: str) -> bool:
+    t = (text or "").lower()
+    return any(k in t for k in ["tuition", "payment", "pay", "downpayment", "down payment", "cashier", "finance", "fees", "balance"])
+
+
+def _detect_college(text: str) -> Optional[str]:
+    t = (text or "").upper()
+    for code, aliases in COLLEGE_ALIASES.items():
+        for a in aliases:
+            if a and a.upper() in t:
+                return code
+    return None
+
+
+def _refer_university(channel_hint: Optional[str] = None) -> str:
+    if channel_hint == "finance":
+        return "For payment-related inquiries, please contact the University Finance office through its official channel."
+    return "For colleges outside CAS, please reach out through the University's official channel."
+
+
+def format_course_name_then_code(c: dict) -> str:
+    """
+    Return 'Course Title (CODE)' or fall back sensibly if title/code are missing.
+    Includes a CAS-specific cleanup for NSTP 2 so ROTC is not shown.
+    """
+    title = (c.get("course_title") or "").strip()
+    code = (c.get("course_code") or c.get("course_id") or "").strip()
+    upper_code = code.upper()
+
+    if upper_code == "NSTP 2":
+        clean_title = "Civic Welfare Training 2"
+        if code:
+            return f"{clean_title} ({code})"
+        return clean_title
+
+    if title and code:
+        return f"{title} ({code})"
+    if title:
+        return title
+    if code:
+        return code
+    return "this course"
+
+
+def _term_label(term: int) -> str:
+    """
+    Human-friendly label for term/semester numbers.
+    Uses 'Trimester' for consistency with existing unit answers.
+    """
+    labels = {
+        1: "First Trimester",
+        2: "Second Trimester",
+        3: "Third Trimester",
+    }
+    return labels.get(term, f"Term {term}")
+
+
+def _is_generic_pathfit_query(user_text: str) -> bool:
+    """
+    Return True when the user is asking a very general PATHFIT question like
+    'what is the prerequisite of pathfit', without specifying PATHFIT 1/2/3/4.
+    """
+    if not user_text:
+        return False
+
+    t = re.sub(r"[^a-z0-9\s]", " ", user_text.lower())
+    tokens = [tok for tok in t.split() if tok]
+
+    if "pathfit" not in tokens:
+        return False
+
+    # If they explicitly mention a number (e.g., 'pathfit 2'), treat it as specific.
+    if any(tok in {"1", "2", "3", "4", "1st", "2nd", "3rd", "4th"} for tok in tokens):
+        return False
+
+    allowed = {
+        "what", "whats", "what's",
+        "is", "are",
+        "the", "a", "an",
+        "of", "for",
+        "subject", "course", "subject?", "course?",
+        "prereq", "prereqs", "prerequisite", "prerequisites",
+        "requirement", "requirements",
+        "in", "about",
+        "this", "that",
+    }
+
+    others = [tok for tok in tokens if tok not in allowed and tok != "pathfit"]
+    return len(others) == 0
+
+
+def _is_generic_nstp_query(user_text: str) -> bool:
+    """
+    Return True when the user is asking a very general NSTP question like
+    'what is the prerequisite of nstp', without specifying NSTP 1 or NSTP 2.
+    """
+    if not user_text:
+        return False
+
+    t = re.sub(r"[^a-z0-9\s]", " ", user_text.lower())
+    tokens = [tok for tok in t.split() if tok]
+
+    if "nstp" not in tokens:
+        return False
+
+    # If they explicitly mention 1 or 2 (e.g., 'nstp 2'), treat it as specific.
+    if any(tok in {"1", "2", "1st", "2nd"} for tok in tokens):
+        return False
+
+    allowed = {
+        "what", "whats", "what's",
+        "is", "are",
+        "the", "a", "an",
+        "of", "for",
+        "subject", "course", "subject?", "course?",
+        "prereq", "prereqs", "prerequisite", "prerequisites",
+        "requirement", "requirements",
+        "in", "about",
+        "this", "that",
+    }
+
+    others = [tok for tok in tokens if tok not in allowed and tok != "nstp"]
+    return len(others) == 0
+
+
+def _build_nstp_overview() -> str:
+    """
+    Summarize NSTP 1 and NSTP 2, showing that NSTP 2 requires NSTP 1.
+    """
+    courses = data["courses"]
+    prereqs = data["prereqs"]
+
+    nstp1 = find_course_by_code(courses, "NSTP 1")
+    nstp2 = find_course_by_code(courses, "NSTP 2")
+
+    lines: list[str] = [
+        "The National Service Training Program (NSTP) at NWU has two components:"
+    ]
+
+    if nstp1:
+        lines.append(f"• {format_course_name_then_code(nstp1)} – no listed prerequisites.")
+    else:
+        lines.append("• NSTP 1 – no listed prerequisites.")
+
+    if nstp2:
+        needed2 = get_prerequisites(prereqs, courses, nstp2.get("course_id"))
+        if needed2:
+            prereq_list = ", ".join(
+                format_course_name_then_code(p) for p in needed2
+            )
+            lines.append(
+                f"• {format_course_name_then_code(nstp2)} – prerequisite: {prereq_list}."
+            )
+        else:
+            lines.append(
+                f"• {format_course_name_then_code(nstp2)} – no listed prerequisites."
+            )
+    else:
+        lines.append("• NSTP 2 – prerequisite: NSTP 1.")
+
+    return "\n".join(lines)
+
+def _is_generic_thesis_query(user_text: str) -> bool:
+    """
+    Return True when the user is asking a very general 'thesis' question,
+    like 'what is the prerequisite of thesis', without specifying program
+    or a particular thesis course.
+    """
+    if not user_text:
+        return False
+
+    t = re.sub(r"[^a-z\s]", " ", user_text.lower())
+    tokens = [tok for tok in t.split() if tok]
+
+    if "thesis" not in tokens:
+        return False
+
+    # Words that are allowed in a generic thesis question.
+    allowed = {
+        "what", "whats", "what's",
+        "is", "are",
+        "the", "a", "an",
+        "of", "for",
+        "subject", "course", "subject?", "course?",
+        "prereq", "prereqs", "prerequisite", "prerequisites",
+        "requirement", "requirements",
+        "in", "about",
+        "this", "that",
+    }
+
+    others = [tok for tok in tokens if tok not in allowed and tok != "thesis"]
+    # If they only say things like "what is the prerequisite of thesis",
+    # treat it as a generic thesis overview question.
+    return len(others) == 0
+
+
+def _build_pathfit_overview() -> str:
+    """
+    Summarize PATHFIT 1–4, showing their prerequisites from the CAS data.
+    """
+    courses = data["courses"]
+    prereqs = data["prereqs"]
+
+    # Collect PATHFIT courses by code.
+    pathfit_courses = []
+    for c in courses:
+        code = (c.get("course_code") or c.get("course_id") or "").strip().upper()
+        if code.startswith("PATHFIT"):
+            pathfit_courses.append(c)
+
+    if not pathfit_courses:
+        return (
+            "There are no PATHFIT courses listed in the current CAS curriculum data."
+        )
+
+    # Sort them by numeric suffix (1–4) if possible.
+    def _pathfit_key(c: dict) -> int:
+        code = (c.get("course_code") or c.get("course_id") or "").strip().upper()
+        parts = code.split()
+        for p in parts:
+            if p.isdigit():
+                return int(p)
+        return 0
+
+    pathfit_courses = sorted(pathfit_courses, key=_pathfit_key)
+
+    lines: list[str] = [
+        "The PATHFIT (Physical Fitness) subjects are sequential:"
+    ]
+
+    for c in pathfit_courses:
+        name_code = format_course_name_then_code(c)
+        needed = get_prerequisites(prereqs, courses, c.get("course_id"))
+
+        if not needed:
+            lines.append(f"• {name_code} – no listed prerequisites.")
+        elif len(needed) == 1:
+            lines.append(
+                f"• {name_code} – prerequisite: "
+                f"{format_course_name_then_code(needed[0])}."
+            )
+        else:
+            prereq_list = ", ".join(
+                format_course_name_then_code(p) for p in needed
+            )
+            lines.append(
+                f"• {name_code} – prerequisites: {prereq_list}."
+            )
+
+    return "\n".join(lines)
+
+
+def _build_thesis_overview() -> str:
+    """
+    Build an overview answer listing all thesis- and thesis-like courses
+    across CAS, grouped by program, each with its prerequisites (if any).
+    """
+    courses = data["courses"]
+    prereqs = data["prereqs"]
+    programs = data["programs"]
+    plan = data["plan"]
+
+    # 1) Collect all thesis / thesis-like courses.
+    thesis_courses_by_code: dict[str, dict] = {}
+    for c in courses:
+        title = (c.get("course_title") or "").strip().lower()
+        code = (c.get("course_code") or c.get("course_id") or "").strip().upper()
+        if not code:
+            continue
+
+        if "thesis" in title:
+            thesis_courses_by_code[code] = c
+            continue
+        if "thesis/special project" in title:
+            thesis_courses_by_code[code] = c
+            continue
+        if "research in psychology" in title:
+            thesis_courses_by_code[code] = c
+            continue
+
+    if not thesis_courses_by_code:
+        return (
+            "There are no thesis or thesis-related research courses listed in the "
+            "current CAS curriculum data."
+        )
+
+    thesis_codes = set(thesis_courses_by_code.keys())
+
+    # 2) Map each thesis course code to the program(s) it appears in using the flattened plan.
+    course_programs: dict[str, set[str]] = {}
+    for entry in plan:
+        cid = (entry.get("course_id") or "").strip().upper()
+        if cid in thesis_codes:
+            pid = entry.get("program_id")
+            if not pid:
+                continue
+            course_programs.setdefault(cid, set()).add(pid)
+
+    # 3) Group thesis courses by program, preserving program order as in programs.json.
+    lines: list[str] = [
+        "Here are thesis and thesis-related research courses across CAS, "
+        "grouped by program, with their prerequisites if any:"
+    ]
+
+    program_by_id = {p.get("program_id"): p for p in programs}
+
+    # Helper: sort thesis courses within a program by year/term order from the plan.
+    def _sorted_thesis_for_program(pid: str) -> list[dict]:
+        rows = []
+        for entry in plan:
+            if entry.get("program_id") != pid:
+                continue
+            cid = (entry.get("course_id") or "").strip().upper()
+            if cid not in thesis_codes:
+                continue
+            rows.append(
+                (
+                    int(entry.get("year_level") or 0),
+                    int(entry.get("term") or 0),
+                    cid,
+                )
+            )
+        seen = set()
+        ordered: list[dict] = []
+        for year, term, cid in sorted(rows):
+            if cid in seen:
+                continue
+            seen.add(cid)
+            course = thesis_courses_by_code.get(cid)
+            if course:
+                ordered.append(course)
+        return ordered
+
+    any_output = False
+
+    for prog in programs:
+        pid = prog.get("program_id")
+        pname = prog.get("program_name") or ""
+        if not pid:
+            continue
+
+        thesis_for_prog = _sorted_thesis_for_program(pid)
+        if not thesis_for_prog:
+            continue
+
+        any_output = True
+        lines.append("")
+        lines.append(
+            f"For {pname}, the thesis and thesis-related research courses are:"
+        )
+
+        for c in thesis_for_prog:
+            name_code = format_course_name_then_code(c)
+            needed = get_prerequisites(prereqs, courses, c.get("course_id"))
+
+            if not needed:
+                lines.append(f"• {name_code} – no listed prerequisites.")
+            elif len(needed) == 1:
+                lines.append(
+                    f"• {name_code} – prerequisite: "
+                    f"{format_course_name_then_code(needed[0])}."
+                )
+            else:
+                prereq_list = ", ".join(
+                    format_course_name_then_code(p) for p in needed
+                )
+                lines.append(
+                    f"• {name_code} – prerequisites: {prereq_list}."
+                )
+
+    # 4) Handle any thesis courses that, for some reason, are not tied to a program in the plan.
+    leftover = [
+        c for code, c in thesis_courses_by_code.items()
+        if code not in course_programs
+    ]
+    if leftover:
+        lines.append("")
+        lines.append(
+            "The following thesis or thesis-related courses are listed but not "
+            "mapped to a specific CAS program in the current plan:"
+        )
+        for c in leftover:
+            name_code = format_course_name_then_code(c)
+            needed = get_prerequisites(prereqs, courses, c.get("course_id"))
+            if not needed:
+                lines.append(f"• {name_code} – no listed prerequisites.")
+            elif len(needed) == 1:
+                lines.append(
+                    f"• {name_code} – prerequisite: "
+                    f"{format_course_name_then_code(needed[0])}."
+                )
+            else:
+                prereq_list = ", ".join(
+                    format_course_name_then_code(p) for p in needed
+                )
+                lines.append(
+                    f"• {name_code} – prerequisites: {prereq_list}."
+                )
+
+    if not any_output:
+        # Fallback, though this shouldn't normally happen.
+        return (
+            "There are thesis and thesis-related research courses in the data, "
+            "but they are not currently mapped to any CAS program in the curriculum plan."
+        )
+
+    return "\n".join(lines)
+
+
+def handle_prereq(user_text: str, ents: dict) -> str:
+    courses = data["courses"]
+    prereqs = data["prereqs"]
+
+    if _is_generic_thesis_query(user_text):
+        return _build_thesis_overview()
+
+    if _is_generic_nstp_query(user_text):
+        return _build_nstp_overview()
+
+    if _is_generic_pathfit_query(user_text):
+        return _build_pathfit_overview()
+
+    course = None
+
+    # 1) If NLU extracted a course code, use that first.
+    if ents.get("course_code"):
+        course = find_course_by_code(courses, ents["course_code"])
+
+    # 2) If NLU extracted a course title span, try fuzzy-match on that.
+    if not course and ents.get("course_title"):
+        fb = fuzzy_best_course_title(courses, ents["course_title"], score_cutoff=70)
+        if fb:
+            course = fb[2]
+
+    # 3) Fallback: search anywhere in the user text.
+    if not course:
+        course = find_course_any(data, user_text)
+
+    if not course:
+        return (
+            "I couldn’t quite tell which course you meant from that.\n\n"
+            "Could you include the course code or the full title so I can look it up? For example:\n"
+            "• Prerequisite of Microbiology (BIO 103 L/L)\n"
+            "• What are the prereqs for Purposive Communication (PCOM)?"
+        )
+
+    course_code = (course.get("course_code") or course.get("course_id") or "").strip().upper()
+
+    if course_code == "IENG":
+        return (
+            "English Review (IENG) is a diagnostic-placement subject based on your "
+            "English diagnostic test results. Please inquire with the Guidance Office "
+            "via their Facebook page https://www.facebook.com/NWUGuidance to confirm "
+            "whether you need to take it."
+        )
+
+    if course_code == "IMAT":
+        return (
+            "Math Review (IMAT) is a diagnostic-placement subject based on your "
+            "Math diagnostic test results. Please inquire with the Guidance Office "
+            "via their Facebook page https://www.facebook.com/NWUGuidance to confirm "
+            "whether you need to take it."
+        )
+
+    needed = get_prerequisites(prereqs, courses, course.get("course_id"))
+    if not needed:
+        heading = format_course_name_then_code(course)
+        return f"{heading} has no listed prerequisites."
+
+    heading = format_course_name_then_code(course)
+
+    if len(needed) == 1:
+        lines: list[str] = [f"Prerequisite of {heading}:"]
+    else:
+        lines = [f"Prerequisites of {heading}:"]
+
+    has_diagnostic = False
+    diag_codes: set[str] = set()
+
+    for c in needed:
+        c_code = (c.get("course_code") or c.get("course_id") or "").strip().upper()
+
+        if c_code == "IENG":
+            has_diagnostic = True
+            diag_codes.add("IENG")
+            lines.append("• English Review (IENG)")
+        elif c_code == "IMAT":
+            has_diagnostic = True
+            diag_codes.add("IMAT")
+            lines.append("• Math Review (IMAT)")
+        else:
+            lines.append(f"• {format_course_name_then_code(c)}")
+
+    if has_diagnostic:
+        lines.append("")
+        if diag_codes == {"IENG"}:
+            lines.append(
+                "Note: English Review (IENG) depends on your English diagnostic "
+                "test results. Please inquire with the Guidance Office via their "
+                "Facebook page https://www.facebook.com/NWUGuidance."
+            )
+        elif diag_codes == {"IMAT"}:
+            lines.append(
+                "Note: Math Review (IMAT) depends on your Math diagnostic "
+                "test results. Please inquire with the Guidance Office via their "
+                "Facebook page https://www.facebook.com/NWUGuidance."
+            )
+        else:
+            lines.append(
+                "Note: English Review (IENG) and Math Review (IMAT) depend on your "
+                "diagnostic test results. Please inquire with the Guidance Office "
+                "via their Facebook page https://www.facebook.com/NWUGuidance."
+            )
+
+    return "\n".join(lines)
+
+def handle_units(user_text: str, ents: dict) -> str:
+    programs = data["programs"]
+    plan = data["plan"]
+    courses = data["courses"]
+
+    # Figure out program first.
+    prog_row = None
+    if ents.get("program"):
+        res = fuzzy_best_program(programs, ents["program"], score_cutoff=60)
+        if res:
+            _, _, prog_row = res
+    if not prog_row:
+        res = fuzzy_best_program(programs, user_text, score_cutoff=60)
+        if res:
+            _, _, prog_row = res
+
+    if not prog_row:
+        return (
+            "To check the units, I’ll need to know which program you’re asking about.\n\n"
+            "Some examples:\n"
+            "• BS Computer Science units\n"
+            "• BS Biology units\n"
+            "• BS Psychology units\n\n"
+            "Which program are you interested in?"
+        )
+
+    pid = prog_row["program_id"]
+    pname = prog_row["program_name"]
+    year = ents.get("year_num")
+
+    if not year:
+        return (
+            f"For {pname}, I’ll also need the year level so I can total the units.\n\n"
+            f"Some examples you can ask:\n"
+            f"• How many units does 1st year {pname} take?\n"
+            f"• How many units does 2nd year {pname} take?"
+        )
+
+    total_units, by_sem, diagnostic_excluded = units_by_program_year_with_exclusions(
+        plan, courses, pid, year
+    )
+
+    year_labels = {1: "First year", 2: "Second year", 3: "Third year", 4: "Fourth year"}
+    year_label = year_labels.get(year, f"Year {year}")
+
+    if not by_sem:
+        return (
+            f"I couldn’t find unit data for {year_label} {pname} in the current curriculum plan."
+        )
+
+    lines = [f"Estimated total units for {year_label} {pname} (excluding diagnostic review subjects):"]
+    for sem, units in sorted(by_sem.items(), key=lambda kv: kv[0]):
+        sem_label = {"1": "First trimester", "2": "Second trimester", "3": "Third trimester"}.get(
+            sem, f"Trimester {sem}"
+        )
+        lines.append(f"• {sem_label}: {units} units")
+    lines.append(f"\nOverall total (excluding IMAT/IENG): {total_units} units")
+
+    if diagnostic_excluded:
+        lines.append(
+            "\nNote: Diagnostic review subjects like IMAT (Math Review) and IENG (English Review) "
+            "depend on your placement/diagnostic test results, so they’re not included here."
+        )
+
+    return "\n".join(lines)
+
+
+def handle_curriculum(user_text: str, ents: dict) -> str:
+    programs = data["programs"]
+    plan = data["plan"]
+    courses = data["courses"]
+
+    tlow = (user_text or "").lower()
+
+    if any(x in tlow for x in ["bael", "abel", "ab english language", "ba english language", "ab english", "ba english", "english language"]):
+        dept_row = department_lookup(data["departments"], "Language and Literature")
+        head = (dept_row or {}).get("department_head")
+        if head:
+            return (
+                "The detailed curriculum plan for BA in English Language isn’t loaded in this system yet.\n\n"
+                "For now, it’s best to check directly with the Department of Language and Literature. "
+                f"You can start with the department head, {head}, for curriculum questions."
+            )
+        return (
+            "The detailed curriculum plan for BA in English Language isn’t loaded in this system yet.\n\n"
+            "For now, it’s best to check directly with the Department of Language and Literature "
+            "for curriculum questions."
+        )
+
+    # 1) Resolve program from entities or free text.
+    prog_row = None
+    if ents.get("program"):
+        res = fuzzy_best_program(programs, ents["program"], score_cutoff=60)
+        if res:
+            _, _, prog_row = res
+    if not prog_row:
+        res = fuzzy_best_program(programs, user_text, score_cutoff=60)
+        if res:
+            _, _, prog_row = res
+
+    if not prog_row:
+        return (
+            "I’m not sure which program you’re asking about yet.\n\n"
+            "Some examples I can help with are:\n"
+            "• BS Computer Science\n"
+            "• BS Biology\n"
+            "• BS Psychology\n"
+            "• BA Communication\n"
+            "• BA Political Science\n\n"
+            "Which program are you interested in?"
+        )
+
+    pid = prog_row["program_id"]
+    pname = prog_row["program_name"]
+
+    # 2) Check if we have any curriculum data for this program.
+    has_entries = any((entry.get("program_id") == pid) for entry in plan)
+    if not has_entries:
+        return (
+            f"The detailed curriculum plan for {pname} isn’t available in this system yet.\n\n"
+            "For the most accurate information, please coordinate with your program chair or "
+            "the Registrar’s Office."
+        )
+
+    year = ents.get("year_num")
+    term = ents.get("term_num")
+
+    # 3) If no specific year, ask the user to narrow it down with a human-friendly explanation.
+    if not year:
+        return (
+            f"I can list all the subjects for {pname}, but that would be a very long answer.\n\n"
+            f"To keep it readable, could you tell me which year level you’re looking at? For example:\n"
+            f"• 1st year {pname} subjects?\n"
+            f"• 2nd year {pname} courses?\n"
+            f"• 1st year {pname}, 2nd trimester subjects?"
+        )
+
+    # 4) Build course list for that year (and optionally specific term).
+    year_labels = {1: "First year", 2: "Second year", 3: "Third year", 4: "Fourth year"}
+    year_label = year_labels.get(year, f"Year {year}")
+
+    # Specific term requested.
+    if term:
+        term_courses = courses_for_plan(plan, courses, pid, year, term)
+        if not term_courses:
+            return (
+                f"I couldn’t find any curriculum entries for {year_label} {pname}, "
+                f"{_term_label(term)} in the current data."
+            )
+
+        lines: list[str] = [
+            f"Courses for {year_label} {pname}, {_term_label(term)}:"
+        ]
+
+        diag_codes: set[str] = set()
+
+        for c in term_courses:
+            code = (c.get("course_code") or c.get("course_id") or "").strip().upper()
+            if code in {"IMAT", "IENG"}:
+                diag_codes.add(code)
+            lines.append(f"• {format_course_name_then_code(c)}")
+
+        if diag_codes:
+            lines.append("")
+            if diag_codes == {"IENG"}:
+                lines.append(
+                    "Note: English Review (IENG) depends on your English diagnostic test results. "
+                    "Please inquire with the Guidance Office via their Facebook page "
+                    "https://www.facebook.com/NWUGuidance."
+                )
+            elif diag_codes == {"IMAT"}:
+                lines.append(
+                    "Note: Math Review (IMAT) depends on your Math diagnostic test results. "
+                    "Please inquire with the Guidance Office via their Facebook page "
+                    "https://www.facebook.com/NWUGuidance."
+                )
+            else:
+                lines.append(
+                    "Note: English Review (IENG) and Math Review (IMAT) depend on your diagnostic "
+                    "test results. Please inquire with the Guidance Office via their Facebook page "
+                    "https://www.facebook.com/NWUGuidance."
+                )
+
+        return "\n".join(lines)
+
+    # No specific term: list up to three terms for that year.
+    lines = [f"Courses for {year_label} {pname}:"]
+    any_term = False
+    diag_codes: set[str] = set()
+
+    for t in [1, 2, 3]:
+        term_courses = courses_for_plan(plan, courses, pid, year, t)
+        if not term_courses:
+            continue
+        any_term = True
+        lines.append("")
+        lines.append(_term_label(t) + ":")
+        for c in term_courses:
+            code = (c.get("course_code") or c.get("course_id") or "").strip().upper()
+            if code in {"IMAT", "IENG"}:
+                diag_codes.add(code)
+            lines.append(f"• {format_course_name_then_code(c)}")
+
+    if not any_term:
+        return (
+            f"I couldn’t find any curriculum entries for {year_label} {pname} in the current data."
+        )
+
+    if diag_codes:
+        lines.append("")
+        if diag_codes == {"IENG"}:
+            lines.append(
+                "Note: English Review (IENG) depends on your English diagnostic test results. "
+                "Please inquire with the Guidance Office via their Facebook page "
+                "https://www.facebook.com/NWUGuidance."
+            )
+        elif diag_codes == {"IMAT"}:
+            lines.append(
+                "Note: Math Review (IMAT) depends on your Math diagnostic test results. "
+                "Please inquire with the Guidance Office via their Facebook page "
+                "https://www.facebook.com/NWUGuidance."
+            )
+        else:
+            lines.append(
+                "Note: English Review (IENG) and Math Review (IMAT) depend on your diagnostic "
+                "test results. Please inquire with the Guidance Office via their Facebook page "
+                "https://www.facebook.com/NWUGuidance."
+            )
+
+    return "\n".join(lines)
+
+
+def handle_dept_heads_list_or_clarify(user_text: str, ents: dict) -> str:
+    tlow = (user_text or "").lower().strip()
+    college = _detect_college(user_text)
+    if college and college != "CAS":
+        return _refer_university()
+    if "all" in tlow or "cas" in tlow or "entire" in tlow or "everyone" in tlow or college == "CAS":
+        rows = list_department_heads(data["departments"])
+        if not rows:
+            return "No department heads found."
+        lines = ["Department heads (including Dean):"]
+        for r in rows:
+            lines.append(f"- {_format_head_row(r)}")
+        return "\n".join(lines)
+    st.session_state.awaiting_college_scope = True
+    st.session_state.pending_intent = "dept_heads_college"
+    return "Do you mean CAS department heads, or heads from another college (e.g., CCJE, COL, COBE, COME, CTE, CAHS, CIHTM, CEAT)?"
+
+
+def handle_dept_head_one(user_text: str, ents: dict) -> str:
+    tlow = (user_text or "").lower()
+    college = _detect_college(user_text)
+    if "dean" in tlow:
+        if college == "CAS" or (college is None):
+            dean_row = get_cas_dean(data["departments"])
+            if dean_row and dean_row.get("department_head"):
+                return f"The dean is {dean_row.get('department_head')}."
+            return "No dean is recorded."
+        if college and college != "CAS":
+            return _refer_university()
+        st.session_state.awaiting_college_scope = True
+        st.session_state.pending_intent = "ask_dean_college"
+        return "Which college dean are you referring to? CAS, or another college (CCJE, COL, COBE, COME, CTE, CAHS, CIHTM, CEAT)?"
+    dep_name = ents.get("department") or user_text
+    drow = department_lookup(data["departments"], dep_name)
+    if not drow:
+        if _is_dept_headish(user_text):
+            st.session_state.awaiting_dept_scope = True
+            st.session_state.pending_intent = "dept_heads_list"
+            return "Which department do you mean (e.g., 'Computer Science')? Or say 'all' for the full CAS list."
+        return "Sorry, that department wasn't recognized. Try the full name (e.g., Computer Science)."
+    head = drow.get("department_head")
+    role = get_dept_role_label(drow, user_text)
+    if not head:
+        return f"No {role.lower()} is recorded for {drow.get('department_name')}."
+    return f"The {role.lower()} is {head}."
+
+
+def resolve_pending(user_text: str) -> Optional[str]:
+    tlow = (user_text or "").lower().strip()
+    if st.session_state.pending_intent == "dept_heads_list":
+        st.session_state.awaiting_dept_scope = False
+        st.session_state.pending_intent = None
+        if "all" in tlow or "cas" in tlow or "everything" in tlow or "everyone" in tlow:
+            rows = list_department_heads(data["departments"])
+            if not rows:
+                return "No department heads found."
+            lines = ["Department heads (including Dean):"]
+            for r in rows:
+                lines.append(f"- {_format_head_row(r)}")
+            return "\n".join(lines)
+        head = get_department_head_by_name(data["departments"], user_text)
+        if head:
+            drow = department_lookup(data["departments"], user_text)
+            role = get_dept_role_label(drow, user_text)
+            return f"The {role.lower()} is {head}."
+        return "Got it—please name the department (e.g., 'Computer Science') or say 'all'."
+    if st.session_state.pending_intent in {"ask_dean_college","dept_heads_college"}:
+        st.session_state.awaiting_college_scope = False
+        intent = st.session_state.pending_intent
+        st.session_state.pending_intent = None
+        college = _detect_college(user_text)
+        if college == "CAS":
+            if intent == "ask_dean_college":
+                dean_row = get_cas_dean(data["departments"])
+                if dean_row and dean_row.get("department_head"):
+                    return f"The dean is {dean_row.get('department_head')}."
+                return "No dean is recorded."
+            if intent == "dept_heads_college":
+                rows = list_department_heads(data["departments"])
+                if not rows:
+                    return "No department heads found."
+                lines = ["Department heads (including Dean):"]
+                for r in rows:
+                    lines.append(f"- {_format_head_row(r)}")
+                return "\n".join(lines)
+        if college and college != "CAS":
+            return _refer_university()
+        return "Thanks. Please specify a college (CAS, CCJE, COL, COBE, COME, CTE, CAHS, CIHTM, CEAT)."
+    return None
+
+
+def route(user_text: str) -> str:
+    if st.session_state.awaiting_dept_scope or st.session_state.awaiting_college_scope:
+        resolved = resolve_pending(user_text)
+        if resolved:
+            return resolved
+
+    if _looks_like_payment(user_text):
+        return _refer_university(channel_hint="finance")
+
+    intent = detect_intent(user_text)
+    ents = extract_entities(user_text)
+    tlow = (user_text or "").lower().strip().rstrip("?!.")
+
+    if tlow in {"department heads", "dept heads", "dept. heads", "different department heads"}:
+        return handle_dept_heads_list_or_clarify(user_text, ents)
+
+    if intent == "courseinfo" and _is_dept_headish(user_text):
+        if ents.get("department"):
+            return handle_dept_head_one(user_text, ents)
+        return handle_dept_heads_list_or_clarify(user_text, ents)
+
+    # 5) Main intent handlers
+    if intent == "prerequisites":
+        return handle_prereq(user_text, ents)
+
+    if intent == "units":
+        return handle_units(user_text, ents)
+
+    if intent == "curriculum":
+        return handle_curriculum(user_text, ents)
+
+    if intent == "dept_heads_list":
+        return handle_dept_heads_list_or_clarify(user_text, ents)
+
+    if intent == "dept_head_one":
+        return handle_dept_head_one(user_text, ents)
+
+    plain = tlow
+    nonnames = {
+        "yes",
+        "yeah",
+        "yup",
+        "y",
+        "ok",
+        "okay",
+        "sure",
+        "alright",
+        "thanks",
+        "thank",
+        "thank you",
+        "tnx",
+        "ty",
+        "k",
+    }
+    if plain in nonnames:
+        return (
+            "Got your reply, but I'm not fully sure what you need yet.\n\n"
+            "Could you put it as a question so I can be more helpful? For example:\n"
+            "• BS Biology subjects?\n"
+            "• 1st year BSCS, 2nd trimester subjects?\n"
+            "• Prerequisite of Microbiology (BIO 103 L/L)?\n"
+            "• How many units does 1st year BS Biology take?"
+        )
+
+    if (
+        intent == "courseinfo"
+        and ents.get("program")
+        and not ents.get("course_code")
+        and not ents.get("course_title")
+    ):
+        programs = data["programs"]
+        prog_row = None
+
+        res = fuzzy_best_program(programs, ents["program"], score_cutoff=70)
+        if res:
+            _, _, prog_row = res
+
+        if not prog_row:
+            res = fuzzy_best_program(programs, user_text, score_cutoff=70)
+            if res:
+                _, _, prog_row = res
+
+        if prog_row:
+            pname = prog_row.get("program_name") or "this program"
+            return (
+                f"It sounds like you're asking about {pname}, but I'm not sure which part you're interested in.\n\n"
+                f"Could you tell me what you want to know about {pname}? For example:\n"
+                f"• 1st year {pname} subjects?\n"
+                f"• Prerequisite of a specific course in {pname}?\n"
+                f"• How many units does 1st year {pname} take?"
+            )
+
+    c = find_course_any(data, user_text)
+    if c:
+        short_tokens = len((user_text or "").split())
+
+        has_explicit_course_word = any(
+            w in tlow for w in ["subject", "subjects", "course", "courses", "curriculum"]
+        )
+        has_units_or_prereq_word = any(
+            w in tlow
+            for w in ["unit", "units", "prereq", "prereqs", "prerequisite", "prerequisites"]
+        )
+        looks_like_code = bool(CODE_RE.search(user_text or ""))
+
+        # Treat as a clear course question only if:
+        # - they explicitly talk about subjects/courses/units/prereqs, or
+        # - they use something that looks like a course code (e.g., BIO 103), or
+        # - the query has enough context (3+ tokens).
+        if has_explicit_course_word or has_units_or_prereq_word or looks_like_code or short_tokens >= 3:
+            return f"{format_course(c)} — {c.get('units', 'NA')} units."
+
+        # Otherwise, the match is too ambiguous (e.g., "bio", "cs", "yes").
+        return (
+            "I might be able to match that to a course, but I'm not completely sure what you need yet.\n\n"
+            "Could you say a bit more so I don't guess wrong? For example:\n"
+            "• BS Biology subjects?\n"
+            "• 1st year BS Biology, 2nd trimester subjects?\n"
+            "• Prerequisite of Microbiology (BIO 103 L/L)?\n"
+            "• How many units does 1st year BSCS take?"
+        )
+
+    # 9) No clear match at all
+    return (
+        "I'm not complete sure what you need yet based on that message.\n\n"
+        "Could you rephrase it with more detail? Here are some examples of questions I can answer:\n"
+        "• BS Computer Science subjects?\n"
+        "• 1st year BS Biology subjects?\n"
+        "• Prerequisite of Purposive Communication (PCOM)?\n"
+        "• How many units does 2nd year BS Psychology take?\n"
+        "• Who is the head of the Computer Science department?"
+    )
+
+
+placeholder = "Say hello, share your name, or ask about prerequisites, unit loads, or department leadership…"
+prompt = st.chat_input(placeholder)
+if prompt:
+    if st.session_state.user_name is None:
+        st.session_state.chat.append({"sender": "You", "message": prompt})
+        render_message("You", prompt)
+        if _looks_like_greeting(prompt):
+            reply = "Hi! What name should I use to address you?"
+            st.session_state.chat.append({"sender": "CASmate", "message": reply})
+            render_message("CASmate", reply)
+        else:
+            maybe_name = _extract_name(prompt)
+            if maybe_name:
+                st.session_state.user_name = maybe_name
+                opening = (
+                    f"Nice to meet you, {maybe_name}! "
+                    "Here's how I can help: outline course prerequisites, summarize unit loads by year and program, "
+                    "and identify department leadership including the CAS Dean. "
+                    "If I need more details, I'll ask; and if something's better handled elsewhere, I'll point you to the right office."
+                )
+                st.session_state.chat.append({"sender": "CASmate", "message": opening})
+                render_message("CASmate", opening)
+            elif _looks_like_question(prompt):
+                reply = route(prompt)
+                st.session_state.chat.append({"sender": "CASmate", "message": reply})
+                render_message("CASmate", reply)
+                nudge = "By the way, how should I address you?"
+                st.session_state.chat.append({"sender": "CASmate", "message": nudge})
+                render_message("CASmate", nudge)
+            else:
+                ask = "Thanks! Could you share your preferred name?"
+                st.session_state.chat.append({"sender": "CASmate", "message": ask})
+                render_message("CASmate", ask)
+    else:
+        st.session_state.chat.append({"sender": "You", "message": prompt})
+        render_message("You", prompt)
+        reply = route(prompt)
+        st.session_state.chat.append({"sender": "CASmate", "message": reply})
+        render_message("CASmate", reply)
+
+chat_ui.py
+
+
+import html
+import re
+
+
+def getchatbubblehtml(sender, message, source=None, user_name=None):
+    is_casmate = (sender == "CASmate")
+    if is_casmate:
+        label = "CASmate"
+    elif user_name:
+        label = user_name
+    else:
+        label = sender
+    safe_message = html.escape(str(message))
+    url_pattern = r'(https?://[^\s]+)'
+    safe_message = re.sub(
+        url_pattern,
+        r'<a href="\1" target="_blank" style="color: #60a5fa; text-decoration: underline;">\1</a>',
+        safe_message
+    )
+    safe_message = safe_message.replace('\n', '<br>')
+    if is_casmate:
+        bubble_style = """
+            background: #1e3a5f;
+            max-width: 75%;
+            padding: 16px 20px;
+            margin: 14px 0;
+            border-radius: 12px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            word-wrap: break-word;
+            clear: both;
+            float: left;
+            color: #E6E9EF;
+        """
+        label_style = "font-weight: 600; margin-bottom: 8px; font-size: 13px; color: #60a5fa;"
+    else:
+        bubble_style = """
+            background: #2d1b4e;
+            max-width: 75%;
+            padding: 16px 20px;
+            margin: 14px 0;
+            border-radius: 12px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            word-wrap: break-word;
+            clear: both;
+            float: right;
+            color: #E6E9EF;
+            border: 1px solid #6366f1;
+        """
+        label_style = "font-weight: 600; margin-bottom: 8px; font-size: 13px; color: #c084fc;"
+    content_style = "font-size: 14px; line-height: 1.65;"
+    src_html = ''
+    if source and str(source).strip():
+        safe_source = html.escape(str(source).strip())
+        src_html = f'<div style="margin-top:10px; font-size:12px; opacity:0.7;">Source: {safe_source}</div>'
+    return f"""
+    <div style="{bubble_style}">
+      <div style="{label_style}">{label}</div>
+      <div style="{content_style}">{safe_message}</div>
+      {src_html}
+    </div>
+    <div style="clear: both;"></div>
+    """
+
+
+def getfooterhtml():
+    return """
+    <div style="text-align: center; padding: 20px; margin-top: 30px; border-top: 1px solid #4b5563; color: #9ca3af; font-size: 13px;">
+        CASmate &copy; 2025 | Northwestern University CAS
+    </div>
+    """
+
+data_api.py
+
+
+import json
+import re
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+from rapidfuzz import process, fuzz
+
+DATADIR = (Path(__file__).parent / "data").resolve()
+
+_WS = re.compile(r"\s+")
+_PUNCT = re.compile(r"[^\w\s]")
+
+CODE_RE = re.compile(r"\b([A-Za-z]{2,4})-?(\d{2,3})\b")
+
+
+PROGRAM_ABBREV = {
+    # BS Computer Science
+    "CS": "Bachelor of Science in Computer Science",
+    "BSCS": "Bachelor of Science in Computer Science",
+    "COMPUTER SCIENCE": "Bachelor of Science in Computer Science",
+    "COMP SCI": "Bachelor of Science in Computer Science",
+    "COMSCI": "Bachelor of Science in Computer Science",
+    "COM SCI": "Bachelor of Science in Computer Science",
+    "BS COMP SCI": "Bachelor of Science in Computer Science",
+    "BSCOMP SCI": "Bachelor of Science in Computer Science",
+    "BS COM SCI": "Bachelor of Science in Computer Science",
+    "BSCOMSCI": "Bachelor of Science in Computer Science",
+
+    # BS Psychology
+    "PSYCH": "Bachelor of Science in Psychology",
+    "BS PSYCH": "Bachelor of Science in Psychology",
+    "BSPSYCH": "Bachelor of Science in Psychology",
+    "PSYCHOLOGY": "Bachelor of Science in Psychology",
+
+    # BA Political Science
+    "POLSAY": "Bachelor of Arts in Political Science",
+    "POLSCI": "Bachelor of Arts in Political Science",
+    "AB POLSCI": "Bachelor of Arts in Political Science",
+    "ABPOLSCI": "Bachelor of Arts in Political Science",
+    "BAPOLSCI": "Bachelor of Arts in Political Science",
+    "BA POLSCI": "Bachelor of Arts in Political Science",
+    "POLITICAL SCIENCE": "Bachelor of Arts in Political Science",
+    "POLS": "Bachelor of Arts in Political Science",
+    "AB PS": "Bachelor of Arts in Political Science",
+    "ABPS": "Bachelor of Arts in Political Science",
+    "BAPS": "Bachelor of Arts in Political Science",
+    "BA PS": "Bachelor of Arts in Political Science",
+
+    # BA English Language
+    "BAEL": "BA in English Language",
+    "ABEL": "BA in English Language",
+
+    # BA Communication
+    "BACOMM": "Bachelor of Arts in Communication",
+    "COMM": "Bachelor of Arts in Communication",
+    "COMMUNICATION": "Bachelor of Arts in Communication",
+    "ABCOMM": "Bachelor of Arts in Communication",
+    "AB COMM": "Bachelor of Arts in Communication",
+    "BA COMM": "Bachelor of Arts in Communication",
+
+    # BS Biology
+    "BIO": "Bachelor of Science in Biology",
+    "BS BIO": "Bachelor of Science in Biology",
+    "BSBIO": "Bachelor of Science in Biology",
+    "BIOLOGY": "Bachelor of Science in Biology",
+}
+
+DEPT_SYNONYMS = {
+    "CAS": "D-CAS",
+    "COLLEGE OF ARTS AND SCIENCES": "D-CAS",
+    "COMPUTER SCIENCE": "D-CS",
+    "COMP SCI": "D-CS",
+    "CS": "D-CS",
+    "SOCIAL SCIENCES": "D-SS",
+    "SOCSCI": "D-SS",
+    "LANGUAGE AND LITERATURE": "D-LL",
+    "LANG & LIT": "D-LL",
+    "LANG LIT": "D-LL",
+    "NATURAL SCIENCES": "D-NS",
+    "NATSCI": "D-NS",
+    "MATHEMATICS": "D-MATH",
+    "MATH": "D-MATH",
+}
+
+
+def _normalize_phrase(s: str) -> str:
+    t = (s or "").lower()
+    t = _PUNCT.sub(" ", t)
+    t = _WS.sub(" ", t).strip()
+    parts = t.split()
+    if parts and len(parts[-1]) > 3 and parts[-1].endswith("s"):
+        parts[-1] = parts[-1][:-1]
+    return " ".join(parts)
+
+
+def _clean_course_query(text: str) -> str:
+    base = _normalize_phrase(text)
+    if not base:
+        return ""
+
+    tokens = base.split()
+
+    remove = {
+        "what", "whats", "what's",
+        "is", "are", "the",
+        "of", "for",
+        "subject", "course", "subjects", "courses",
+        "prereq", "prereqs", "prerequisite", "prerequisites",
+        "requirement", "requirements",
+        "in", "about", "regarding",
+        "do", "does", "should", "need", "take",
+        "before", "prior",
+    }
+
+    kept = [t for t in tokens if t not in remove]
+
+    # If everything was stripped, fall back to the normalized base.
+    return " ".join(kept) if kept else base
+
+
+def _read_json_clean(path: Path) -> List[Dict]:
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if not isinstance(data, list):
+        raise ValueError(f"JSON file {path} must contain a list of objects")
+
+    cleaned_data: List[Dict] = []
+    for item in data:
+        cleaned_item: Dict = {}
+        for key, value in item.items():
+            clean_key = key.strip() if isinstance(key, str) else key
+            clean_value = value.strip() if isinstance(value, str) else value
+            cleaned_item[clean_key] = clean_value
+        cleaned_data.append(cleaned_item)
+    return cleaned_data
+
+
+def _load_json(name: str) -> List[Dict]:
+    path = (DATADIR / name).resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"Missing data file: {path}")
+    return _read_json_clean(path)
+
+
+def _credit_units_to_int(val) -> int:
+    if val is None:
+        return 0
+    s = str(val).strip()
+    if not s:
+        return 0
+    try:
+        if "/" in s:
+            parts = s.split("/")
+            total = 0
+            for p in parts:
+                p = p.strip()
+                if not p:
+                    continue
+                total += int(p)
+            return total
+        return int(float(s))
+    except Exception:
+        return 0
+
+
+def _flatten_plan(plan_raw: List[Dict]) -> List[Dict]:
+    if not plan_raw:
+        return []
+
+    if "terms" not in plan_raw[0]:
+        return plan_raw
+
+    flat: List[Dict] = []
+    for prog in plan_raw:
+        pid = prog.get("program_id")
+        terms = prog.get("terms") or []
+        for term in terms:
+            year_level = term.get("year_level")
+            semester = term.get("term")
+            courses = term.get("courses") or []
+            for code in courses:
+                flat.append(
+                    {
+                        "program_id": pid,
+                        "year_level": year_level,
+                        "semester": semester,
+                        "course_id": code,
+                    }
+                )
+    return flat
+
+
+def _normalize_prereqs(prereqs_raw: List[Dict]) -> List[Dict]:
+    out: List[Dict] = []
+    for row in prereqs_raw:
+        r = dict(row)
+        if "course_id" not in r and "course_code" in r:
+            r["course_id"] = r.get("course_code")
+        if "prerequisite_course_id" not in r and "prerequisite_course_code" in r:
+            r["prerequisite_course_id"] = r.get("prerequisite_course_code")
+        out.append(r)
+    return out
+
+
+def _postprocess_courses(courses: List[Dict]) -> List[Dict]:
+    out: List[Dict] = []
+    for c in courses:
+        row = dict(c)
+        code = row.get("course_code") or row.get("course_id")
+        if code and not row.get("course_id"):
+            row["course_id"] = code
+        if "units" not in row:
+            cu = row.get("credit_units")
+            row["units"] = _credit_units_to_int(cu)
+        out.append(row)
+    return out
+
+
+def load_all() -> Dict:
+    departments = _load_json("departments.json")
+    programs = _load_json("programs.json")
+    courses_raw = _load_json("courses.json")
+    plan_raw = _load_json("curriculum_plan.json")
+    prereqs_raw = _load_json("prerequisites.json")
+    faculty = _load_json("faculty.json")
+
+    courses = _postprocess_courses(courses_raw)
+    plan = _flatten_plan(plan_raw)
+    prereqs = _normalize_prereqs(prereqs_raw)
+
+    return {
+        "departments": departments,
+        "programs": programs,
+        "courses": courses,
+        "plan": plan,
+        "prereqs": prereqs,
+        "faculty": faculty,
+    }
+
+
+def find_course_by_code(courses: List[Dict], code: str) -> Optional[Dict]:
+    if not code:
+        return None
+    norm = (code or "").strip().upper().replace(" ", "").replace("-", "")
+    for c in courses:
+        ccode = (c.get("course_code") or "").strip().upper().replace(" ", "").replace("-", "")
+        if ccode == norm:
+            return c
+    return None
+
+
+def fuzzy_best_course_title(
+    courses: List[Dict], query: str, score_cutoff: int = 80
+) -> Optional[Tuple[str, int, Dict]]:
+    if not query:
+        return None
+    choices = {c["course_title"]: c for c in courses if c.get("course_title")}
+    if not choices:
+        return None
+    result = process.extractOne(query, choices.keys(), scorer=fuzz.WRatio, score_cutoff=score_cutoff)
+    if not result:
+        return None
+    match, score, _ = result
+    return match, score, choices[match]
+
+
+def fuzzy_top_course_titles(
+    courses: List[Dict], query: str, limit: int = 3, score_cutoff: int = 60
+) -> List[Tuple[str, int, Dict]]:
+    if not query:
+        return []
+    choices = {c["course_title"]: c for c in courses if c.get("course_title")}
+    if not choices:
+        return []
+    results = process.extract(
+        query, choices.keys(), scorer=fuzz.WRatio, limit=limit, score_cutoff=score_cutoff
+    )
+    return [(m, s, choices[m]) for m, s, _ in results]
+
+
+def _keyword_match_course(courses: List[Dict], text: str) -> Optional[Dict]:
+    clean = _clean_course_query(text)
+    if not clean:
+        return None
+
+    q_tokens = set(clean.split())
+    if not q_tokens:
+        return None
+
+    best_course: Optional[Dict] = None
+    best_overlap = 0
+
+    for c in courses:
+        title = c.get("course_title") or ""
+        norm_title = _normalize_phrase(title)
+        title_tokens = set(norm_title.split())
+        overlap = len(q_tokens & title_tokens)
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_course = c
+
+    # Require at least one overlapping token to avoid nonsense matches.
+    if best_overlap > 0:
+        return best_course
+
+    return None
+
+
+def course_by_alias(data: Dict, alias: str) -> Optional[Dict]:
+    if not alias:
+        return None
+
+    courses = data.get("courses", [])
+    if not courses:
+        return None
+
+    # 1) Try keyword/token overlap on the cleaned query.
+    kw_hit = _keyword_match_course(courses, alias)
+    if kw_hit:
+        return kw_hit
+
+    # 2) Try fuzzy match on the raw text.
+    fb = fuzzy_best_course_title(courses, alias, score_cutoff=70)
+    if fb:
+        return fb[2]
+
+    # 3) Try fuzzy match again on the cleaned text.
+    clean = _clean_course_query(alias)
+    if clean and clean != alias:
+        fb = fuzzy_best_course_title(courses, clean, score_cutoff=70)
+        if fb:
+            return fb[2]
+
+    return None
+
+
+def find_course_any(data: Dict, text: str) -> Optional[Dict]:
+    courses = data.get("courses", [])
+    if not text or not courses:
+        return None
+
+    text_upper = (text or "").upper()
+    no_space = text_upper.replace(" ", "")
+
+    for c in courses:
+        code = (c.get("course_code") or c.get("course_id") or "").upper()
+        if not code:
+            continue
+        code_no_space = code.replace(" ", "")
+        if code in text_upper or code_no_space in no_space:
+            return c
+
+    m = CODE_RE.search(text or "")
+    if m:
+        code = f"{m.group(1)}{m.group(2)}"
+        found = find_course_by_code(courses, code)
+        if found:
+            return found
+
+    alias_hit = course_by_alias(data, text)
+    if alias_hit:
+        return alias_hit
+
+    fb = fuzzy_best_course_title(courses, text, score_cutoff=70)
+    if not fb:
+        clean = _clean_course_query(text)
+        if clean and clean != text:
+            fb = fuzzy_best_course_title(courses, clean, score_cutoff=70)
+
+    if fb:
+        return fb[2]
+
+    return None
+
+
+def fuzzy_best_program(
+    programs: List[Dict], query: str, score_cutoff: int = 70
+) -> Optional[Tuple[str, int, Dict]]:
+    if not query:
+        return None
+
+    query_upper = query.strip().upper()
+    if query_upper in PROGRAM_ABBREV:
+        target_name = PROGRAM_ABBREV[query_upper]
+        for p in programs:
+            if (p.get("program_name") or "").strip().upper() == target_name.upper():
+                return (query, 100, p)
+    for p in programs:
+        pname = (p.get("program_name") or "").strip()
+        if pname.upper() == query_upper:
+            return (pname, 100, p)
+    for p in programs:
+        pname = (p.get("program_name") or "").strip()
+        if query_upper in pname.upper():
+            return (pname, 95, p)
+    for p in programs:
+        sname = (p.get("short_name") or "").strip()
+        if sname.upper() == query_upper:
+            return (p.get("program_name"), 100, p)
+        if query_upper in sname.upper():
+            return (p.get("program_name"), 95, p)
+    choices: Dict[str, Dict] = {}
+    for p in programs:
+        name = p.get("program_name") or ""
+        if name:
+            choices[name] = p
+    for p in programs:
+        sname = p.get("short_name") or ""
+        if sname:
+            choices[sname] = p
+    for p in programs:
+        name = p.get("program_name") or ""
+        low = name.lower()
+        if low.startswith("bachelor of science in "):
+            short = name[23:]
+            choices[short] = p
+        elif low.startswith("bachelor of arts in "):
+            short = name[20:]
+            choices[short] = p
+    for abbrev, full_name in PROGRAM_ABBREV.items():
+        row = next(
+            (p for p in programs if (p.get("program_name") or "").upper() == full_name.upper()),
+            None,
+        )
+        if row:
+            choices[abbrev] = row
+
+    if not choices:
+        return None
+
+    result = process.extractOne(query, list(choices.keys()), scorer=fuzz.WRatio, score_cutoff=score_cutoff)
+    if not result:
+        return None
+    match, score, _ = result
+    return match, score, choices[match]
+
+
+def get_prerequisites(
+    prereqs: List[Dict],
+    courses: List[Dict],
+    course_id: str,
+) -> List[Dict]:
+    if not course_id:
+        return []
+
+    needed: List[Dict] = []
+    seen = set()
+
+    by_id: Dict[str, Dict] = {}
+    for c in courses:
+        cid = c.get("course_id")
+        if cid:
+            by_id[cid] = c
+
+    for p in prereqs:
+        if p.get("course_id") != course_id:
+            continue
+
+        ptype = (p.get("type") or "course").lower()
+        pre_id = p.get("prerequisite_course_id")
+
+        if not pre_id or pre_id in seen:
+            continue
+
+        if ptype != "course":
+            continue
+
+        prereq_course = by_id.get(pre_id)
+        if prereq_course:
+            seen.add(pre_id)
+            needed.append(prereq_course)
+
+    return needed
+
+
+def _to_units(val) -> int:
+    try:
+        return int(str(val).strip())
+    except Exception:
+        try:
+            return int(float(str(val).strip()))
+        except Exception:
+            return 0
+
+
+def courses_for_plan(
+    plan: List[Dict],
+    courses: List[Dict],
+    program_id: str,
+    year: int,
+    semester: int,
+) -> List[Dict]:
+    rows: List[Dict] = []
+
+    by_id: Dict[str, Dict] = {}
+    for c in courses:
+        cid = c.get("course_id")
+        if cid:
+            by_id[cid] = c
+
+    for entry in plan:
+        if (
+            entry.get("program_id") == program_id
+            and str(entry.get("year_level")) == str(year)
+            and str(entry.get("semester")) == str(semester)
+        ):
+            cid = entry.get("course_id")
+            course = by_id.get(cid)
+            if course:
+                rows.append(course)
+
+    return rows
+
+
+def units_by_program_year(
+    plan: List[Dict],
+    courses: List[Dict],
+    program_id: str,
+    year: int,
+) -> Tuple[int, Dict[str, int]]:
+    by_sem: Dict[str, int] = {}
+    total = 0
+
+    for sem in ["1", "2", "3"]:
+        sem_courses: List[Dict] = []
+
+        for entry in plan:
+            if (
+                entry.get("program_id") == program_id
+                and str(entry.get("year_level")) == str(year)
+                and str(entry.get("semester")) == str(sem)
+            ):
+                cid = entry.get("course_id")
+                c = next((x for x in courses if x.get("course_id") == cid), None)
+                if c:
+                    sem_courses.append(c)
+
+        sem_units = sum(_to_units(c.get("units")) for c in sem_courses)
+        if sem_units > 0:
+            by_sem[sem] = sem_units
+            total += sem_units
+
+    return total, by_sem
+
+
+def units_by_program_year_with_exclusions(
+    plan: List[Dict],
+    courses: List[Dict],
+    program_id: str,
+    year: int,
+) -> Tuple[int, Dict[str, int], bool]:
+    DIAGNOSTIC_COURSES = {"IMAT", "IENG"}
+    
+    by_sem: Dict[str, int] = {}
+    total = 0
+    diagnostic_excluded = False
+
+    for sem in ["1", "2", "3"]:
+        sem_courses: List[Dict] = []
+
+        for entry in plan:
+            if (
+                entry.get("program_id") == program_id
+                and str(entry.get("year_level")) == str(year)
+                and str(entry.get("semester")) == str(sem)
+            ):
+                cid = entry.get("course_id")
+                c = next((x for x in courses if x.get("course_id") == cid), None)
+                if c:
+                    course_code = (c.get("course_code") or "").strip().upper()
+                    if course_code in DIAGNOSTIC_COURSES:
+                        diagnostic_excluded = True
+                        continue
+                    sem_courses.append(c)
+
+        sem_units = sum(_to_units(c.get("units")) for c in sem_courses)
+        if sem_units > 0:
+            by_sem[sem] = sem_units
+            total += sem_units
+
+    return total, by_sem, diagnostic_excluded
+
+
+def get_department_by_id(departments: List[Dict], dept_id: str) -> Optional[Dict]:
+    return next((d for d in departments if d.get("department_id") == dept_id), None)
+
+
+def _norm_upper(s: str) -> str:
+    return _PUNCT.sub(" ", (s or "")).upper().strip()
+
+
+def department_lookup(departments: List[Dict], name: str) -> Optional[Dict]:
+    if not name:
+        return None
+
+    key = _norm_upper(name)
+
+    if key in DEPT_SYNONYMS:
+        return get_department_by_id(departments, DEPT_SYNONYMS[key])
+
+    for d in departments:
+        if _norm_upper(d.get("department_name")) == key:
+            return d
+
+    for d in departments:
+        if key in _norm_upper(d.get("department_name")):
+            return d
+
+    choices = {d.get("department_name") or "": d for d in departments}
+    if not choices:
+        return None
+
+    result = process.extractOne(name, list(choices.keys()), scorer=fuzz.WRatio, score_cutoff=70)
+    if result:
+        return choices[result[0]]
+
+    return None
+
+
+def list_department_heads(departments: List[Dict]) -> List[Dict]:
+    rows: List[Dict] = []
+    for d in departments:
+        head = d.get("department_head") or ""
+        if head:
+            rows.append(
+                {
+                    "department_id": d.get("department_id"),
+                    "department_name": d.get("department_name"),
+                    "department_head": head,
+                    "dean_flag": d.get("dean_flag") or "N",
+                }
+            )
+
+    rows.sort(
+        key=lambda r: 0 if (r.get("dean_flag") or "N").upper() == "Y" else 1
+    )
+    return rows
+
+
+def get_department_head_by_name(departments: List[Dict], dept_name: str) -> Optional[str]:
+    d = department_lookup(departments, dept_name)
+    if not d:
+        return None
+    return d.get("department_head")
+
+
+def get_dept_role_label(dept_row: Dict, user_text: str) -> str:
+    if not dept_row:
+        return "Department head"
+
+    if (dept_row.get("dean_flag") or "N").upper() == "Y":
+        return "Dean"
+
+    if "dean" in (user_text or "").lower():
+        return "Dean"
+
+    return "Department head"
+
+
+def get_cas_dean(departments: List[Dict]) -> Optional[Dict]:
+    return next(
+        (d for d in departments if (d.get("dean_flag") or "N").upper() == "Y"),
+        None,
+    )
+
+nlu_rules.py
+
+
+import re
+from typing import Dict, List, Optional, Tuple
+
+import spacy
+from spacy.matcher import Matcher, PhraseMatcher
+
+nlp = spacy.blank("en")
+
+matcher = Matcher(nlp.vocab)
+phrase_matcher = PhraseMatcher(nlp.vocab, attr="LOWER")
+
+WS_RE = re.compile(r"\s+")
+CODE_RE = re.compile(r"\b([A-Za-z]{2,4})-?(\d{2,3})\b")
+
+
+PROGRAM_CANON = {
+    "CS": "BS in Computer Science",
+    "BSCS": "BS in Computer Science",
+
+    "PSYCH": "BS in Psychology",
+    "BS PSYCH": "BS in Psychology",
+
+    "POLSAY": "BA in Political Science",
+    "POLSCI": "BA in Political Science",
+    "AB POLSCI": "BA in Political Science",
+    "AB PS": "BA in Political Science",
+    "ABPS": "BA in Political Science",
+    "BAPS": "BA in Political Science",
+    "BA PS": "BA in Political Science",
+
+    "BAEL": "BA in English Language",
+    "ABEL": "BA in English Language",
+
+    "BACOMM": "BA in Communications",
+    "COMM": "BA in Communications",
+
+    "BIO": "BS in Biology",
+    "BS BIO": "BS in Biology",
+}
+
+
+
+def norm_key(s: str) -> str:
+    return "".join(s or "").strip().upper()
+
+
+PROGRAM_ABBREVIATIONS: Dict[str, str] = {norm_key(k): v for k, v in PROGRAM_CANON.items()}
+
+DEPT_ALIASES = [
+    "CAS", "College of Arts and Sciences",
+    "Computer Science", "Comp Sci", "CS", "CS Department", "CS Dept", "CS Dept.",
+    "Social Sciences", "SocSci",
+    "Language and Literature", "Lang & Lit", "Lang Lit",
+    "Natural Sciences", "NatSci",
+    "Mathematics", "Math", "Math Department", "Math Dept",
+]
+
+YEAR_WORDS = {
+    "first": 1, "1st": 1, "year 1": 1, "yr 1": 1, "freshman": 1,
+    "second": 2, "2nd": 2, "year 2": 2, "yr 2": 2, "sophomore": 2,
+    "third": 3, "3rd": 3, "year 3": 3, "yr 3": 3, "junior": 3,
+    "fourth": 4, "4th": 4, "year 4": 4, "yr 4": 4, "senior": 4,
+}
+
+
+def build_gazetteers(
+    programs: List[Dict],
+    courses: List[Dict],
+    departments: Optional[List[Dict]] = None,
+) -> None:
+    if "PROG" in phrase_matcher:
+        phrase_matcher.remove("PROG")
+
+    prog_docs = [nlp(p["program_name"]) for p in programs if p.get("program_name")]
+    base_docs = []
+    for p in programs:
+        name = p.get("program_name") or ""
+        low = name.lower()
+        if low.startswith("bs "):
+            base_docs.append(nlp(name[3:]))
+        elif low.startswith("ba "):
+            base_docs.append(nlp(name[3:]))
+
+    abbrev_docs = [nlp(k) for k in PROGRAM_ABBREVIATIONS.keys()]
+    all_prog_docs = prog_docs + base_docs + abbrev_docs
+    if all_prog_docs:
+        phrase_matcher.add("PROG", all_prog_docs)
+
+    if "COURSETITLE" in phrase_matcher:
+        phrase_matcher.remove("COURSETITLE")
+
+    title_docs = [nlp(c["course_title"]) for c in courses if c.get("course_title")]
+    short_docs = []
+    for c in courses:
+        t = (c.get("course_title") or "").lower()
+        if "data structure" in t or "data structures" in t:
+            for v in ["data struct", "datastruct", "data structure", "data structures", "ds", "dsa"]:
+                short_docs.append(nlp(v))
+        if "calculus" in t:
+            for v in ["calc 1", "cal 1", "calculus 1", "calc i", "calculus i", "calc"]:
+                short_docs.append(nlp(v))
+        if "psychology" in t:
+            for v in ["psych", "intro psych"]:
+                short_docs.append(nlp(v))
+        if "biology" in t:
+            for v in ["bio", "general bio"]:
+                short_docs.append(nlp(v))
+
+    all_course_docs = title_docs + short_docs
+    if all_course_docs:
+        phrase_matcher.add("COURSETITLE", all_course_docs)
+
+    if "DEPT" in phrase_matcher:
+        phrase_matcher.remove("DEPT")
+
+    dept_docs = [nlp(x) for x in DEPT_ALIASES]
+    if departments:
+        dept_docs += [
+            nlp(d.get("department_name") or "")
+            for d in departments
+            if d.get("department_name")
+        ]
+    if dept_docs:
+        phrase_matcher.add("DEPT", dept_docs)
+
+
+def add_lower_in(name: str, words: List[str]) -> None:
+    matcher.add(name, [[{"LOWER": {"IN": words}}]])
+
+
+add_lower_in("INTENT_GREET", ["hi", "hello", "hey"])
+add_lower_in("INTENT_GOODBYE", ["bye", "goodbye", "thanks", "thank", "tnx"])
+
+matcher.add(
+    "INTENT_PREREQ",
+    [
+        [{"LOWER": {"IN": ["prereq", "prereqs", "prerequisite", "prerequisites", "requirement", "requirements"]}}],
+        [
+            {"LOWER": {"IN": ["what", "whats", "what's"]}},
+            {"LOWER": {"IN": ["is", "are", "the"]}, "OP": "?"},
+            {"LOWER": {"IN": ["prereq", "prereqs", "prerequisite", "prerequisites", "requirement"]}},
+        ],
+        [
+            {"LOWER": {"IN": ["prereq", "prereqs", "prerequisite", "prerequisites"]}},
+            {"LOWER": {"IN": ["of", "for"]}},
+        ],
+        [
+            {"LOWER": {"IN": ["what"]}},
+            {"LOWER": {"IN": ["do", "should"]}, "OP": "?"},
+            {"LOWER": {"IN": ["i", "we"]}, "OP": "?"},
+            {"LOWER": {"IN": ["need", "take"]}},
+            {"LOWER": {"IN": ["before", "for", "prior"]}},
+        ],
+    ],
+)
+
+matcher.add(
+    "INTENT_UNITS",
+    [
+        [{"LOWER": "how"}, {"LOWER": "many"}, {"LOWER": "units"}],
+        [{"LOWER": "units"}, {"LOWER": {"IN": ["for", "of", "in"]}}],
+        [{"LOWER": {"IN": ["total", "sum", "load"]}}, {"LOWER": "units"}],
+    ],
+)
+
+matcher.add(
+    "INTENT_DEPT_HEADS_LIST",
+    [
+        [
+            {"LOWER": {"IN": ["list", "show", "different", "all"]}},
+            {"LOWER": {"IN": ["department", "dept", "dept."]}},
+            {"LOWER": {"IN": ["heads", "chairs", "leadership"]}},
+        ],
+        [
+            {"LOWER": {"IN": ["who"]}},
+            {"LOWER": {"IN": ["are"]}},
+            {"LOWER": {"IN": ["the"]}, "OP": "?"},
+            {"LOWER": {"IN": ["different", "department", "dept", "dept."]}, "OP": "*"},
+            {"LOWER": {"IN": ["heads", "chairs", "leadership"]}},
+        ],
+        [
+            {"LOWER": {"IN": ["department", "dept", "dept."]}},
+            {"LOWER": {"IN": ["heads", "chairs", "leadership"]}},
+        ],
+    ],
+)
+
+matcher.add(
+    "INTENT_DEPT_HEAD_ONE",
+    [
+        [
+            {"LOWER": {"IN": ["who", "who's", "whos"]}},
+            {"LOWER": {"IN": ["is"]}, "OP": "?"},
+            {"LOWER": "the", "OP": "*"},
+            {"IS_ALPHA": True, "OP": "+"},
+            {"LOWER": {"IN": ["department", "dept", "dept.", "deprtment", "deprtmnt", "detp"]}, "OP": "?"},
+            {"LOWER": {"IN": ["head", "haed", "hed", "chair", "dean"]}},
+        ],
+        [
+            {"LOWER": {"IN": ["head", "haed", "hed", "chair", "dean"]}},
+            {"LOWER": "of"},
+            {"IS_ALPHA": True, "OP": "+"},
+        ],
+        [
+            {"IS_ALPHA": True, "OP": "+"},
+            {"LOWER": {"IN": ["dept", "department", "dept.", "deprtment", "deprtmnt", "detp"]}},
+            {"LOWER": {"IN": ["head", "haed", "hed", "chair"]}},
+        ],
+    ],
+)
+
+
+def detect_intent(text: str) -> str:
+    doc = nlp(text or "")
+    labels = [nlp.vocab.strings[mid] for mid, _, _ in matcher(doc)]
+    tlow = (text or "").lower().strip()
+
+    if "dean" in tlow:
+        return "dept_head_one"
+    if "heads" in tlow or "leadership" in tlow:
+        return "dept_heads_list"
+
+    if "INTENT_DEPT_HEADS_LIST" in labels or tlow in {
+        "department heads", "dept heads", "dept. heads", "different department heads"
+    }:
+        return "dept_heads_list"
+
+    if "INTENT_DEPT_HEAD_ONE" in labels or (
+        "dept head" in tlow or "department head" in tlow or "who's the" in tlow
+    ):
+        return "dept_head_one"
+
+    # Curriculum / subject-list questions (explicit words)
+    if any(w in tlow for w in ["subject", "subjects", "course", "courses", "curriculum"]):
+        has_year_hint = (
+            "year" in tlow
+            or "yr " in tlow
+            or any(x in tlow for x in ["1st", "2nd", "3rd", "4th", "first", "second", "third", "fourth"])
+        )
+        has_prog_hint = any(
+            x in tlow
+            for x in [
+                # Computer Science
+                "cs",
+                "computer science",
+                "bscs",
+                "bs cs",
+                # Psychology
+                "psych",
+                "psychology",
+                "bs psych",
+                # Biology
+                "bio",
+                "biology",
+                "bsbio",
+                "bs bio",
+                # Political Science
+                "political science",
+                "polsci",
+                "ab ps",
+                "abps",
+                "baps",
+                "ba ps",
+                # Communication
+                "communication",
+                "comm",
+                # English Language
+                "bael",
+                "abel",
+                "english language",
+            ]
+        )
+        if has_year_hint or has_prog_hint:
+            return "curriculum"
+
+    # Curriculum questions without explicit "subjects/courses" but with year + program
+    has_year_only = (
+        "year" in tlow
+        or "yr " in tlow
+        or any(x in tlow for x in ["1st", "2nd", "3rd", "4th", "first", "second", "third", "fourth"])
+    )
+    has_prog_only = any(
+        x in tlow
+        for x in [
+            # Computer Science
+            "cs",
+            "computer science",
+            "bscs",
+            "bs cs",
+            # Psychology
+            "psych",
+            "psychology",
+            "bs psych",
+            # Biology
+            "bio",
+            "biology",
+            "bsbio",
+            "bs bio",
+            # Political Science
+            "political science",
+            "polsci",
+            "ab ps",
+            "abps",
+            "baps",
+            "ba ps",
+            # Communication
+            "communication",
+            "comm",
+            # English Language
+            "bael",
+            "abel",
+            "english language",
+        ]
+    )
+    if has_year_only and has_prog_only:
+        return "curriculum"
+
+    # Prerequisites and units
+    if "INTENT_PREREQ" in labels or "prereq" in tlow or "prerequisite" in tlow:
+        return "prerequisites"
+
+    if "INTENT_UNITS" in labels or "units" in tlow:
+        return "units"
+
+    # Fallback: course info / single-course questions
+    return "courseinfo"
+
+
+def _extract_year(text: str) -> Optional[int]:
+    tl = (text or "").lower()
+    for k, v in YEAR_WORDS.items():
+        if k in tl:
+            return v
+
+    m = re.search(r"\b(?:year|yr)\s*(\d)\b", tl)
+    if m:
+        return int(m.group(1))
+
+    m2 = re.search(r"\b(1st|2nd|3rd|4th)\s+year\b", tl)
+    if m2:
+        return int(m2.group(1)[0])
+
+    return None
+
+
+def _extract_term(text: str) -> Optional[int]:
+    """
+    Extract a term/semester number (1–3) from text, based on phrases like
+    '1st semester', 'first trimester', '2nd term', etc.
+    """
+    tl = (text or "").lower()
+
+    # 1st / first
+    if re.search(r"\b(1st|first)\s+(sem|sem\.|semester|trimester|term)\b", tl):
+        return 1
+    # 2nd / second
+    if re.search(r"\b(2nd|second)\s+(sem|sem\.|semester|trimester|term)\b", tl):
+        return 2
+    # 3rd / third
+    if re.search(r"\b(3rd|third)\s+(sem|sem\.|semester|trimester|term)\b", tl):
+        return 3
+
+    return None
+
+
+def extract_entities(text: str) -> Dict[str, Optional[str]]:
+    doc = nlp(text or "")
+
+    ents: Dict[str, Optional[str]] = {
+        "program": None,
+        "course_title": None,
+        "course_code": None,
+        "department": None,
+        "year_num": None,
+        "term_num": None,
+    }
+
+    m = CODE_RE.search(text or "")
+    if m:
+        ents["course_code"] = f"{m.group(1)}{m.group(2)}"
+
+    for mid, s, e in phrase_matcher(doc):
+        label = nlp.vocab.strings[mid]
+        span_text = doc[s:e].text
+        if label == "PROG" and not ents["program"]:
+            ents["program"] = span_text
+        elif label == "COURSETITLE" and not ents["course_title"]:
+            ents["course_title"] = span_text
+        elif label == "DEPT" and not ents["department"]:
+            ents["department"] = span_text
+
+    ents["year_num"] = _extract_year(text)
+    ents["term_num"] = _extract_term(text)
+
+    return ents
+
+curriculum_plan.json
+
+
+[
+  {
+    "program_id": "P-COMM",
+    "program_name": "Bachelor of Arts in Communication",
+    "terms": [
+      {
+        "year_level": 1,
+        "term": 1,
+        "term_name": "First Year, First Trimester",
+        "courses": [
+          "CC COM 1",
+          "RPH",
+          "LTE L/L",
+          "PATHFIT 1",
+          "NSTP 1",
+          "IMAT",
+          "IENG",
+          "IEUTH 1"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 2,
+        "term_name": "First Year, Second Trimester",
+        "courses": [
+          "CR COM 1",
+          "PCOM",
+          "MMW",
+          "UTS",
+          "PATHFIT 2",
+          "NSTP 2",
+          "IEUTH 2"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 3,
+        "term_name": "First Year, Third Trimester",
+        "courses": [
+          "CC COM 2",
+          "RC COM 1",
+          "CR COM 2",
+          "C ELE 1",
+          "ART",
+          "ENT",
+          "PATHFIT 3"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 1,
+        "term_name": "Second Year, First Trimester",
+        "courses": [
+          "RC COM 2",
+          "RC COM 3",
+          "SS ELE 1",
+          "SS ELE 2",
+          "LWR",
+          "IMM L",
+          "PATHFIT 4"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 2,
+        "term_name": "Second Year, Second Trimester",
+        "courses": [
+          "CC COM 3",
+          "C ELE 2",
+          "C ELE 3",
+          "SS ELE 3",
+          "ETH",
+          "STS"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 3,
+        "term_name": "Second Year, Third Trimester",
+        "courses": [
+          "CR COM 3",
+          "CC COM 4",
+          "CC COM 5",
+          "TCW",
+          "LIT",
+          "ENVS"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 1,
+        "term_name": "Third Year, First Trimester",
+        "courses": [
+          "C ELE 4",
+          "RC COM 4",
+          "CC COM 6",
+          "SS ELE 4",
+          "TH/SP 1"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 2,
+        "term_name": "Third Year, Second Trimester",
+        "courses": [
+          "CC COM 7",
+          "CR COM 3",
+          "TH/SP 2",
+          "SS ELE 5"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 3,
+        "term_name": "Third Year, Third Trimester",
+        "courses": [
+          "COM 1"
+        ]
+      }
+    ]
+  },
+  {
+    "program_id": "P-POLS",
+    "program_name": "Bachelor of Arts in Political Science",
+    "terms": [
+      {
+        "year_level": 1,
+        "term": 1,
+        "term_name": "First Year, First Trimester",
+        "courses": [
+          "PS 101",
+          "RPH",
+          "LTE L/L",
+          "IENG",
+          "IMAT",
+          "NSTP 1",
+          "PATHFIT 1",
+          "IEUTH 1"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 2,
+        "term_name": "First Year, Second Trimester",
+        "courses": [
+          "PS 102",
+          "UTS",
+          "PCOM",
+          "MMW",
+          "IEUTH 2",
+          "PATHFIT 2",
+          "NSTP 2",
+          "PS ELEF 1"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 3,
+        "term_name": "First Year, Third Trimester",
+        "courses": [
+          "PS 104",
+          "PS ELE 1",
+          "PS ELEF 2",
+          "ART",
+          "ENT",
+          "PATHFIT 3"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 1,
+        "term_name": "Second Year, First Trimester",
+        "courses": [
+          "PS 108",
+          "PS ELE 2",
+          "PS 105",
+          "LWR",
+          "FUT",
+          "IMM L",
+          "PATHFIT 4"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 2,
+        "term_name": "Second Year, Second Trimester",
+        "courses": [
+          "PS ELE 4",
+          "PS 109",
+          "PS ELE 3",
+          "PS ELE 6",
+          "ETH",
+          "STS"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 3,
+        "term_name": "Second Year, Third Trimester",
+        "courses": [
+          "PS 103",
+          "PS 107",
+          "PS ELE 7",
+          "TCW",
+          "LIT",
+          "ENVS"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 1,
+        "term_name": "Third Year, First Trimester",
+        "courses": [
+          "PS 106",
+          "PS ELE 8",
+          "PS ELEF 3",
+          "PS ELE 9",
+          "PS ELE 5",
+          "PS ELE 10"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 2,
+        "term_name": "Third Year, Second Trimester",
+        "courses": [
+          "PS ELEF 4",
+          "PS 110",
+          "PS ELE 11",
+          "PS 111",
+          "PS ELE 12"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 3,
+        "term_name": "Third Year, Third Trimester",
+        "courses": [
+          "PS 112"
+        ]
+      }
+    ]
+  },
+  {
+    "program_id": "P-PSY",
+    "program_name": "Bachelor of Science in Psychology",
+    "terms": [
+      {
+        "year_level": 1,
+        "term": 1,
+        "term_name": "First Year, First Trimester",
+        "courses": [
+          "PSYCH 101",
+          "RPH",
+          "LTE L/L",
+          "IENG",
+          "IMAT",
+          "NSTP 1",
+          "PATHFIT 1",
+          "IEUTH 1"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 2,
+        "term_name": "First Year, Second Trimester",
+        "courses": [
+          "UTS",
+          "PCOM",
+          "MMW",
+          "IEUTH 2",
+          "PATHFIT 2",
+          "NSTP 2",
+          "PSYCH 102 L/L",
+          "NS ELE 1"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 3,
+        "term_name": "First Year, Third Trimester",
+        "courses": [
+          "PSYCH 103",
+          "PSYCH 104",
+          "NS ELE 2",
+          "PSYCH 107",
+          "ART",
+          "ENT",
+          "PATHFIT 3"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 1,
+        "term_name": "Second Year, First Trimester",
+        "courses": [
+          "PSYCH 105 L/L",
+          "PSYCH 113",
+          "PSYCH ELE 5",
+          "LWR",
+          "FUT",
+          "IMM L",
+          "PATHFIT 4"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 2,
+        "term_name": "Second Year, Second Trimester",
+        "courses": [
+          "PSYCH 111",
+          "PSYCH 108",
+          "NS ELE 3 L/L",
+          "PSYCH ELE 3",
+          "ETH",
+          "STS"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 3,
+        "term_name": "Second Year, Third Trimester",
+        "courses": [
+          "NS ELE 4 L/L",
+          "PSYCH 109",
+          "PSYCH 106 L/L",
+          "TCW",
+          "LIT",
+          "ENVS"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 1,
+        "term_name": "Third Year, First Trimester",
+        "courses": [
+          "PSYCH 110",
+          "PSYCH ELE 4",
+          "PSYCH 112",
+          "NS ELE 5 L/L"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 2,
+        "term_name": "Third Year, Second Trimester",
+        "courses": [
+          "PSYCH 114 L/L",
+          "PSYCH 115",
+          "PSYCH ELE 1"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 3,
+        "term_name": "Third Year, Third Trimester",
+        "courses": [
+          "PSYCH PRAC"
+        ]
+      }
+    ]
+  },
+  {
+    "program_id": "P-BIO",
+    "program_name": "Bachelor of Science in Biology",
+    "terms": [
+      {
+        "year_level": 1,
+        "term": 1,
+        "term_name": "First Year, First Semester",
+        "courses": [
+          "ZOO 101 L/L",
+          "LTE L/L",
+          "RPH",
+          "IENG",
+          "IMAT",
+          "PATHFIT 1",
+          "NSTP 1",
+          "IEUTH 1"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 2,
+        "term_name": "First Year, Second Trimester",
+        "courses": [
+          "PCOM",
+          "MMW",
+          "UTS",
+          "BOT 101 L/L",
+          "CHE 101 L/L",
+          "PATHFIT 2",
+          "NSTP 2",
+          "IEUTH 2"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 3,
+        "term_name": "First Year, Third Trimester",
+        "courses": [
+          "BIO 101 L/L",
+          "ART",
+          "ENT",
+          "BIO 102 L/L",
+          "CHE 102 L/L",
+          "PATHFIT 3"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 1,
+        "term_name": "Second Year, First Trimester",
+        "courses": [
+          "FUT",
+          "LWR",
+          "IMM L",
+          "BIO 103 L/L",
+          "BIO 104 L/L",
+          "CHE 103 L/L",
+          "PATHFIT 4"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 2,
+        "term_name": "Second Year, Second Trimester",
+        "courses": [
+          "BIO 105 L/L",
+          "ETH",
+          "STS",
+          "STA 101 L/L",
+          "BIO 106 L/L",
+          "BOT 102 L/L"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 3,
+        "term_name": "Second Year, Third Trimester",
+        "courses": [
+          "LIT",
+          "BIO 107 L/L",
+          "TCW",
+          "PHY 101 L/L",
+          "SED 121",
+          "THE 101"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 1,
+        "term_name": "Third Year, First Trimester",
+        "courses": [
+          "MED 102 L/L",
+          "BIO 108 L/L",
+          "MED 101 L/L",
+          "THE 102"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 2,
+        "term_name": "Third Year, Second Trimester",
+        "courses": [
+          "THE 103",
+          "BIO 110 L/L",
+          "BIO 109 L/L"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 3,
+        "term_name": "Third Year, Third Trimester",
+        "courses": [
+          "PRAC 101"
+        ]
+      }
+    ]
+  },
+  {
+    "program_id": "P-CS",
+    "program_name": "Bachelor of Science in Computer Science",
+    "terms": [
+      {
+        "year_level": 1,
+        "term": 1,
+        "term_name": "First Year, First Trimester",
+        "courses": [
+          "CC 111 L/L",
+          "CC 112 L/L",
+          "RPH",
+          "PATHFIT 1",
+          "NSTP 1",
+          "IENG",
+          "IMAT",
+          "IEUTH 1"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 2,
+        "term_name": "First Year, Second Trimester",
+        "courses": [
+          "CC 123 L/L",
+          "CS 121",
+          "CS 122 L/L",
+          "PCOM",
+          "MMW",
+          "UTS",
+          "PATHFIT 2",
+          "NSTP 2",
+          "IEUTH 2"
+        ]
+      },
+      {
+        "year_level": 1,
+        "term": 3,
+        "term_name": "First Year, Third Trimester",
+        "courses": [
+          "CC 134 L/L",
+          "CC 135 L/L",
+          "CC 131",
+          "CS 132 L/L",
+          "MATH 131",
+          "ART",
+          "ENT",
+          "PATHFIT 3"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 1,
+        "term_name": "Second Year, First Trimester",
+        "courses": [
+          "CS 211 L/L",
+          "CS 212 L/L",
+          "MATH 212",
+          "LWR",
+          "FUT",
+          "PATHFIT 4",
+          "IMML"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 2,
+        "term_name": "Second Year, Second Trimester",
+        "courses": [
+          "CS 221",
+          "CS 222",
+          "CS 223 L/L",
+          "MATH 223",
+          "ETH",
+          "STS"
+        ]
+      },
+      {
+        "year_level": 2,
+        "term": 3,
+        "term_name": "Second Year, Third Trimester",
+        "courses": [
+          "CS 231 L/L",
+          "CS 232 L/L",
+          "CS ELE 1 L/L",
+          "CS FREL 1",
+          "TCW",
+          "LIT",
+          "ENVS"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 1,
+        "term_name": "Third Year, First Trimester",
+        "courses": [
+          "CS 311",
+          "CS 312",
+          "CS 313 L/L",
+          "CS 314 L/L",
+          "CS ELE 2 L/L",
+          "CS FREL 2"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 2,
+        "term_name": "Third Year, Second Trimester",
+        "courses": [
+          "CS THS 1",
+          "CSC 326 L/L",
+          "CS 321",
+          "CS 322 L/L",
+          "CS ELE 3 L/L",
+          "CS FREL 3"
+        ]
+      },
+      {
+        "year_level": 3,
+        "term": 3,
+        "term_name": "Third Year, Third Trimester",
+        "courses": [
+          "CS THS 2",
+          "CS PRC"
+        ]
+      }
+    ]
+  }
+]
+
+faculty.json
+
+[
+  {
+    "faculty_id": "F-001",
+    "full_name": "DR. YSL",
+    "title": "Dean",
+    "department_id": "D-CAS"
+  },
+  {
+    "faculty_id": "F-101",
+    "full_name": "DR. PV",
+    "title": "Department Head",
+    "department_id": "D-SS"
+  },
+  {
+    "faculty_id": "F-201",
+    "full_name": "PROF. RC",
+    "title": "Department Head",
+    "department_id": "D-CS"
+  },
+  {
+    "faculty_id": "F-301",
+    "full_name": "DR. JV",
+    "title": "Department Head",
+    "department_id": "D-LL"
+  },
+  {
+    "faculty_id": "F-401",
+    "full_name": "PROF. RP",
+    "title": "Department Head",
+    "department_id": "D-NS"
+  },
+  {
+    "faculty_id": "F-501",
+    "full_name": "DR. NL",
+    "title": "Department Head",
+    "department_id": "D-MATH"
+  }
+]
+
+programs.json
+
+
+[
+  {
+    "program_id": "P-COMM",
+    "program_name": "Bachelor of Arts in Communication",
+    "short_name": "BA Communication",
+    "department_id": "D-LL"
+  },
+  {
+    "program_id": "P-POLS",
+    "program_name": "Bachelor of Arts in Political Science",
+    "short_name": "BA Political Science",
+    "department_id": "D-SS"
+  },
+  {
+    "program_id": "P-PSY",
+    "program_name": "Bachelor of Science in Psychology",
+    "short_name": "BS Psychology",
+    "department_id": "D-SS"
+  },
+  {
+    "program_id": "P-BIO",
+    "program_name": "Bachelor of Science in Biology",
+    "short_name": "BS Biology",
+    "department_id": "D-NS"
+  },
+  {
+    "program_id": "P-CS",
+    "program_name": "Bachelor of Science in Computer Science",
+    "short_name": "BS Computer Science",
+    "department_id": "D-CS"
+  }
+]
+
+courses.json
+
+
+[
+  {
+    "course_code": "CC COM 1",
+    "course_title": "Communication Theory",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "RPH",
+    "course_title": "Readings in Philippine History",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "General Education course."
+  },
+  {
+    "course_code": "LTE L/L",
+    "course_title": "Living in the IT Era",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": "General Education / ICT-related course."
+  },
+  {
+    "course_code": "PATHFIT 1",
+    "course_title": "Movement Competency Training",
+    "credit_units": "2",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "NSTP 1",
+    "course_title": "Civic Welfare Training 1",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "National Service Training Program component."
+  },
+  {
+    "course_code": "IMAT",
+    "course_title": "Math Review",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Enrollment based on Math diagnostic test performance."
+  },
+  {
+    "course_code": "IENG",
+    "course_title": "English Review",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Enrollment based on English diagnostic test performance."
+  },
+  {
+    "course_code": "IEUTH 1",
+    "course_title": "College Life and Personhood",
+    "credit_units": "1",
+    "lecture_hours_per_week": "1 hour 20 minutes",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "CR COM 1",
+    "course_title": "Development Communication",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "PCOM",
+    "course_title": "Purposive Communication",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "General Education course."
+  },
+  {
+    "course_code": "MMW",
+    "course_title": "Mathematics in the Modern World",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "General Education course."
+  },
+  {
+    "course_code": "UTS",
+    "course_title": "Understanding the Self",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "General Education course."
+  },
+  {
+    "course_code": "PATHFIT 2",
+    "course_title": "Fitness Training",
+    "credit_units": "2",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "NSTP 2",
+    "course_title": "Civic Welfare Training 2 / CWTS / LTC / ROTC",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Continuation of NSTP 1."
+  },
+  {
+    "course_code": "IEUTH 2",
+    "course_title": "Moral Recovery and Restoration of National Discipline",
+    "credit_units": "1",
+    "lecture_hours_per_week": "1 hour 20 minutes",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "CC COM 2",
+    "course_title": "Introduction to Communication Media",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "RC COM 1",
+    "course_title": "Broadcasting Principles and Practice",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "CR COM 2",
+    "course_title": "Knowledge Management",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "C ELE 1",
+    "course_title": "Political Economy in Communication",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Communication elective."
+  },
+  {
+    "course_code": "ART",
+    "course_title": "Art Appreciation",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "General Education course."
+  },
+  {
+    "course_code": "ENT",
+    "course_title": "Entrepreneurial Mind",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "General Education / institutional course."
+  },
+  {
+    "course_code": "PATHFIT 3",
+    "course_title": "Dances",
+    "credit_units": "2",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "RC COM 2",
+    "course_title": "Advertising Principles and Practice",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "RC COM 3",
+    "course_title": "Introduction to Film",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "SS ELE 1",
+    "course_title": "Human Rights and Humanitarian Law",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Social science elective."
+  },
+  {
+    "course_code": "SS ELE 2",
+    "course_title": "Local Government Administration in the Philippines",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Social science elective."
+  },
+  {
+    "course_code": "LWR",
+    "course_title": "Life and Works of Rizal",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "General Education course."
+  },
+  {
+    "course_code": "IMM L",
+    "course_title": "Multimedia",
+    "credit_units": "1",
+    "lecture_hours_per_week": "",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "PATHFIT 4",
+    "course_title": "Team Sports",
+    "credit_units": "2",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "CC COM 3",
+    "course_title": "Communication Research",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "C ELE 2",
+    "course_title": "Digital Imaging",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Communication elective."
+  },
+  {
+    "course_code": "C ELE 3",
+    "course_title": "Creative Cultural Content Development",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Communication elective."
+  },
+  {
+    "course_code": "SS ELE 3",
+    "course_title": "Parliamentary Practice and Procedure",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Social science elective."
+  },
+  {
+    "course_code": "ETH",
+    "course_title": "Ethics",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "General Education course."
+  },
+  {
+    "course_code": "STS",
+    "course_title": "Science, Technology and Society",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "General Education course."
+  },
+  {
+    "course_code": "CR COM 3",
+    "course_title": "Risk, Disaster, and Humanitarian Communication",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "CC COM 4",
+    "course_title": "Communication Media Laws and Ethics",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "CC COM 5",
+    "course_title": "Communication Planning",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "TCW",
+    "course_title": "The Contemporary World",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "General Education course."
+  },
+  {
+    "course_code": "LIT",
+    "course_title": "Philippine Literature with Values",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "General Education course."
+  },
+  {
+    "course_code": "ENVS",
+    "course_title": "Environmental Science",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "General Education course."
+  },
+  {
+    "course_code": "C ELE 4",
+    "course_title": "Digital Publishing",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Communication elective."
+  },
+  {
+    "course_code": "RC COM 4",
+    "course_title": "Social Media Principles & Practice",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "CC COM 6",
+    "course_title": "Communication Culture and Society",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "SS ELE 4",
+    "course_title": "International Law, Organization, and Culture",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Social science elective."
+  },
+  {
+    "course_code": "TH/SP 1",
+    "course_title": "Thesis/Special Project 1",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "First part of thesis/special project sequence."
+  },
+  {
+    "course_code": "CC COM 7",
+    "course_title": "Communication Management",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "TH/SP 2",
+    "course_title": "Thesis/Special Project 2",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Second part of thesis/special project sequence."
+  },
+  {
+    "course_code": "SS ELE 5",
+    "course_title": "Culture and Psychology / Filipino Psychology",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Social science elective."
+  },
+  {
+    "course_code": "COM 1",
+    "course_title": "Internship (450 hours)",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Requires Third Year Standing; 450 hours of internship."
+  },
+  {
+    "course_code": "PS 101",
+    "course_title": "Fundamentals of Political Science",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "PS 102",
+    "course_title": "Introduction to Philippine Politics and Governance",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "PS ELEF 1",
+    "course_title": "Free Elective 1 (Political Science)",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Program-level free elective."
+  },
+  {
+    "course_code": "PS 104",
+    "course_title": "Introduction to Political Theory",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "PS ELE 1",
+    "course_title": "Human Rights and Humanitarian Law",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Political Science elective."
+  },
+  {
+    "course_code": "PS ELEF 2",
+    "course_title": "Free Elective 2 (Political Science)",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Program-level free elective."
+  },
+  {
+    "course_code": "PS 108",
+    "course_title": "Introduction to International Relations",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "PS ELE 2",
+    "course_title": "Parliamentary Practice and Procedure",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Political Science elective."
+  },
+  {
+    "course_code": "PS 105",
+    "course_title": "Introduction to Comparative Politics",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "FUT",
+    "course_title": "Futures Thinking",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Institutional course."
+  },
+  {
+    "course_code": "PS ELE 4",
+    "course_title": "International Law, Organization, and Culture",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Political Science elective."
+  },
+  {
+    "course_code": "PS 109",
+    "course_title": "Politics and Governance in Southeast Asia",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "PS ELE 3",
+    "course_title": "Local Government Administration of the Philippines",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Political Science elective."
+  },
+  {
+    "course_code": "PS ELE 6",
+    "course_title": "Introduction to Law",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Political Science elective."
+  },
+  {
+    "course_code": "PS 103",
+    "course_title": "Introduction to Political Analysis and Research",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "PS 107",
+    "course_title": "Philippine Public Administration",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "PS ELE 7",
+    "course_title": "Philippine Constitution",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Political Science elective."
+  },
+  {
+    "course_code": "PS 106",
+    "course_title": "Qualitative and Quantitative Analysis of Political Data",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "PS ELE 8",
+    "course_title": "Anticipatory Governance and Public Policy",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Political Science elective."
+  },
+  {
+    "course_code": "PS ELEF 3",
+    "course_title": "Free Elective 3 (Political Science)",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Program-level free elective."
+  },
+  {
+    "course_code": "PS ELE 9",
+    "course_title": "Legal Hermeneutics",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Political Science elective."
+  },
+  {
+    "course_code": "PS ELE 5",
+    "course_title": "International Political Economy",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Political Science elective."
+  },
+  {
+    "course_code": "PS ELE 10",
+    "course_title": "Basic Legal Writing",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Political Science elective."
+  },
+  {
+    "course_code": "PS ELEF 4",
+    "course_title": "Free Elective 4 (Political Science)",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Program-level free elective."
+  },
+  {
+    "course_code": "PS 110",
+    "course_title": "Thesis Writing in Political Science",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Capstone research writing course."
+  },
+  {
+    "course_code": "PS ELE 11",
+    "course_title": "Good Governance, Leadership, and Citizenship",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Political Science elective."
+  },
+  {
+    "course_code": "PS 111",
+    "course_title": "Practicum in Political Science I (School-Based)",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Requires Third Year Standing."
+  },
+  {
+    "course_code": "PS ELE 12",
+    "course_title": "Global Governance",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Political Science elective."
+  },
+  {
+    "course_code": "PS 112",
+    "course_title": "Practicum in Political Science II (Industry-Based) (450 hours)",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Requires Third Year Standing; 450 hours industry-based practicum."
+  },
+  {
+    "course_code": "PSYCH 101",
+    "course_title": "Introduction to Psychology",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "PSYCH 102 L/L",
+    "course_title": "Psychological Statistics",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "NS ELE 1",
+    "course_title": "Neuroscience",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Natural science elective."
+  },
+  {
+    "course_code": "PSYCH 103",
+    "course_title": "Theories of Personality",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "PSYCH 104",
+    "course_title": "Developmental Psychology",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "NS ELE 2",
+    "course_title": "Intro to Pharmacology",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Natural science elective."
+  },
+  {
+    "course_code": "PSYCH 107",
+    "course_title": "Physiological/Biological Psychology",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "PSYCH 105 L/L",
+    "course_title": "Experimental Psychology",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "PSYCH 113",
+    "course_title": "Cognitive Psychology",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "PSYCH ELE 5",
+    "course_title": "Community Health Psychology",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Psychology elective."
+  },
+  {
+    "course_code": "PSYCH 111",
+    "course_title": "Industrial/Organizational Psychology",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "PSYCH 108",
+    "course_title": "Abnormal Psychology",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "NS ELE 3 L/L",
+    "course_title": "Human Anatomy and Physiology",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": "Natural science elective."
+  },
+  {
+    "course_code": "PSYCH ELE 3",
+    "course_title": "Introduction to Counseling",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Psychology elective."
+  },
+  {
+    "course_code": "NS ELE 4 L/L",
+    "course_title": "General & Inorganic Chemistry",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": "Natural science elective."
+  },
+  {
+    "course_code": "PSYCH 109",
+    "course_title": "Research in Psychology 1",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "First research sequence course."
+  },
+  {
+    "course_code": "PSYCH 106 L/L",
+    "course_title": "Psychological Assessment",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "PSYCH 110",
+    "course_title": "Research in Psychology 2",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Second research sequence course."
+  },
+  {
+    "course_code": "PSYCH ELE 4",
+    "course_title": "Disaster and Mental Health",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Psychology elective."
+  },
+  {
+    "course_code": "PSYCH 112",
+    "course_title": "Social Psychology",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "NS ELE 5 L/L",
+    "course_title": "Organic Biochemistry",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": "Natural science elective."
+  },
+  {
+    "course_code": "PSYCH 114 L/L",
+    "course_title": "Field Methods in Psychology",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "PSYCH 115",
+    "course_title": "Culture Psychology / Filipino Psychology",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "PSYCH ELE 1",
+    "course_title": "Group Dynamics",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Psychology elective."
+  },
+  {
+    "course_code": "PSYCH PRAC",
+    "course_title": "Practicum (450 hours)",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Requires Third Year Standing; 450 hours practicum."
+  },
+  {
+    "course_code": "ZOO 101 L/L",
+    "course_title": "General Zoology",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "BOT 101 L/L",
+    "course_title": "General Botany",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CHE 101 L/L",
+    "course_title": "Chemical Biology 1 - Organic Molecules",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "BIO 101 L/L",
+    "course_title": "Systematics",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "BIO 102 L/L",
+    "course_title": "General Ecology",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CHE 102 L/L",
+    "course_title": "Chemical Biology 2 - Analytical Methods of Biology",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "BIO 103 L/L",
+    "course_title": "Microbiology",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "BIO 104 L/L",
+    "course_title": "Evolutionary Biology",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CHE 103 L/L",
+    "course_title": "Chemical Biology 3 - Biomolecules",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "BIO 105 L/L",
+    "course_title": "Genetics",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "STA 101 L/L",
+    "course_title": "Statistical Biology",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "BIO 106 L/L",
+    "course_title": "Cell and Molecular Biology",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "BOT 102 L/L",
+    "course_title": "Plant Physiology",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "BIO 107 L/L",
+    "course_title": "General Physiology",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "PHY 101 L/L",
+    "course_title": "Biophysics",
+    "credit_units": "2/2",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "SED 121",
+    "course_title": "The Teaching of Science",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Education-oriented course."
+  },
+  {
+    "course_code": "THE 101",
+    "course_title": "Thesis 1 (Thesis Proposal)",
+    "credit_units": "2",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "",
+    "remarks": "First thesis course (proposal)."
+  },
+  {
+    "course_code": "MED 102 L/L",
+    "course_title": "Medical Microbiology",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "BIO 108 L/L",
+    "course_title": "Developmental Biology",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "MED 101 L/L",
+    "course_title": "Human Anatomy and Physiology",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "THE 102",
+    "course_title": "Thesis 2 (Thesis Experimentation)",
+    "credit_units": "2",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "",
+    "remarks": "Second thesis course (experimentation)."
+  },
+  {
+    "course_code": "THE 103",
+    "course_title": "Thesis 3 (Thesis Writing and Final Defense)",
+    "credit_units": "2",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "",
+    "remarks": "Third thesis course (writing and defense)."
+  },
+  {
+    "course_code": "BIO 110 L/L",
+    "course_title": "Biological Resource Management",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "BIO 109 L/L",
+    "course_title": "Population Ecology",
+    "credit_units": "3/2",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "8 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "PRAC 101",
+    "course_title": "Practicum (300 hours)",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Requires Third Year Standing; 300 hours practicum."
+  },
+  {
+    "course_code": "CC 111 L/L",
+    "course_title": "Introduction to Computing",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CC 112 L/L",
+    "course_title": "Fundamentals of Programming",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CC 123 L/L",
+    "course_title": "Intermediate Programming",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CS 121",
+    "course_title": "Fundamentals of Discrete Structures",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "CS 122 L/L",
+    "course_title": "Computer Architecture and Organization",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CC 134 L/L",
+    "course_title": "Data Structures and Algorithm",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CC 135 L/L",
+    "course_title": "Information Management",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CC 131",
+    "course_title": "Advanced Discrete Structures",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "CS 132 L/L",
+    "course_title": "Object Oriented Programming",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "MATH 131",
+    "course_title": "Linear Algebra",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "CS 211 L/L",
+    "course_title": "Operating System",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CS 212 L/L",
+    "course_title": "Web Application Development",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "MATH 212",
+    "course_title": "Calculus for Computer Science",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Prerequisite: MATH 131."
+  },
+  {
+    "course_code": "IMML",
+    "course_title": "Multimedia Lab",
+    "credit_units": "1",
+    "lecture_hours_per_week": "",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CS 221",
+    "course_title": "Principles of Programming Languages",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "CS 222",
+    "course_title": "Social Issues and Professional Practices",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "CS 223 L/L",
+    "course_title": "Mobile Application Development",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "MATH 223",
+    "course_title": "Numerical Analysis",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Prerequisite: MATH 212."
+  },
+  {
+    "course_code": "CS 231 L/L",
+    "course_title": "Animation and Game Design",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CS 232 L/L",
+    "course_title": "System Analysis and Design",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CS ELE 1 L/L",
+    "course_title": "CS Elective 1",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": "Part of a chosen CS elective track."
+  },
+  {
+    "course_code": "CS FREL 1",
+    "course_title": "Free Elective 1 (CS)",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Program-level free elective."
+  },
+  {
+    "course_code": "CS 311",
+    "course_title": "Automata Theory and Formal Languages",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Prerequisite: MATH 223."
+  },
+  {
+    "course_code": "CS 312",
+    "course_title": "Human Computer Interaction",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "CS 313 L/L",
+    "course_title": "Software Engineering",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CS 314 L/L",
+    "course_title": "Networks and Communications",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CS ELE 2 L/L",
+    "course_title": "CS Elective 2",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": "Part of a chosen CS elective track."
+  },
+  {
+    "course_code": "CS FREL 2",
+    "course_title": "Free Elective 2 (CS)",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Program-level free elective."
+  },
+  {
+    "course_code": "CS THS 1",
+    "course_title": "CS Thesis Writing 1",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "First part of CS thesis sequence."
+  },
+  {
+    "course_code": "CSC 326 L/L",
+    "course_title": "Application Development and Emerging Technologies",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CS 321",
+    "course_title": "Algorithms and Complexity",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": ""
+  },
+  {
+    "course_code": "CS 322 L/L",
+    "course_title": "Information Assurance and Security",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": ""
+  },
+  {
+    "course_code": "CS ELE 3 L/L",
+    "course_title": "CS Elective 3",
+    "credit_units": "2/1",
+    "lecture_hours_per_week": "2 hours 40 minutes",
+    "laboratory_hours_per_week": "4 hours",
+    "remarks": "Part of a chosen CS elective track."
+  },
+  {
+    "course_code": "CS FREL 3",
+    "course_title": "Free Elective 3 (CS)",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Program-level free elective."
+  },
+  {
+    "course_code": "CS THS 2",
+    "course_title": "CS Thesis Writing 2",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Second part of CS thesis sequence."
+  },
+  {
+    "course_code": "CS PRC",
+    "course_title": "Practicum (300 hours)",
+    "credit_units": "3",
+    "lecture_hours_per_week": "4 hours",
+    "laboratory_hours_per_week": "",
+    "remarks": "Requires Third Year Standing; 300 hours practicum."
+  },
+  {
+    "course_code": "CSIS 1",
+    "course_title": "Introduction to Intelligent Systems",
+    "credit_units": "3",
+    "lecture_hours_per_week": "",
+    "laboratory_hours_per_week": "",
+    "remarks": "Track 1: Intelligent Systems."
+  },
+  {
+    "course_code": "CSIS 2",
+    "course_title": "Machine Learning",
+    "credit_units": "3",
+    "lecture_hours_per_week": "",
+    "laboratory_hours_per_week": "",
+    "remarks": "Track 1: Intelligent Systems."
+  },
+  {
+    "course_code": "CSIS 3",
+    "course_title": "Natural Language Processing",
+    "credit_units": "3",
+    "lecture_hours_per_week": "",
+    "laboratory_hours_per_week": "",
+    "remarks": "Track 1: Intelligent Systems."
+  },
+  {
+    "course_code": "CSDC 1",
+    "course_title": "Introduction to Data Science",
+    "credit_units": "3",
+    "lecture_hours_per_week": "",
+    "laboratory_hours_per_week": "",
+    "remarks": "Track 2: Data Science."
+  },
+  {
+    "course_code": "CSDC 2",
+    "course_title": "Applied Machine Learning for Data Science",
+    "credit_units": "3",
+    "lecture_hours_per_week": "",
+    "laboratory_hours_per_week": "",
+    "remarks": "Track 2: Data Science."
+  },
+  {
+    "course_code": "CSDC 3",
+    "course_title": "Big Data Analytics",
+    "credit_units": "3",
+    "lecture_hours_per_week": "",
+    "laboratory_hours_per_week": "",
+    "remarks": "Track 2: Data Science."
+  },
+  {
+    "course_code": "CSRA 1",
+    "course_title": "Fundamentals of Robotics",
+    "credit_units": "3",
+    "lecture_hours_per_week": "",
+    "laboratory_hours_per_week": "",
+    "remarks": "Track 3: Robotics and Automation."
+  },
+  {
+    "course_code": "CSRA 2",
+    "course_title": "Embedded Systems and Microcontroller Programming",
+    "credit_units": "3",
+    "lecture_hours_per_week": "",
+    "laboratory_hours_per_week": "",
+    "remarks": "Track 3: Robotics and Automation."
+  },
+  {
+    "course_code": "CSRA 3",
+    "course_title": "Automation and Intelligent Control Systems",
+    "credit_units": "3",
+    "lecture_hours_per_week": "",
+    "laboratory_hours_per_week": "",
+    "remarks": "Track 3: Robotics and Automation."
+  },
+  {
+    "course_code": "ITE F TW",
+    "course_title": "Technical Writing",
+    "credit_units": "3",
+    "lecture_hours_per_week": "",
+    "laboratory_hours_per_week": "",
+    "remarks": "CS Free Elective."
+  },
+  {
+    "course_code": "ITE F PS",
+    "course_title": "Probability and Statistics",
+    "credit_units": "3",
+    "lecture_hours_per_week": "",
+    "laboratory_hours_per_week": "",
+    "remarks": "CS Free Elective."
+  },
+  {
+    "course_code": "ITE F CTC",
+    "course_title": "Current Trends and Issues in Computing",
+    "credit_units": "3",
+    "lecture_hours_per_week": "",
+    "laboratory_hours_per_week": "",
+    "remarks": "CS Free Elective."
+  },
+  {
+    "course_code": "ITE F PPM",
+    "course_title": "Project Planning and Management",
+    "credit_units": "3",
+    "lecture_hours_per_week": "",
+    "laboratory_hours_per_week": "",
+    "remarks": "CS Free Elective."
+  },
+  {
+    "course_code": "ITE F PMT",
+    "course_title": "Principles and Methods of Teaching",
+    "credit_units": "3",
+    "lecture_hours_per_week": "",
+    "laboratory_hours_per_week": "",
+    "remarks": "CS Free Elective."
+  }
+]
+
+departments.json
+
+[
+  {
+    "department_id": "D-CAS",
+    "department_name": "CAS Dean",
+    "department_head": "DR. YSL",
+    "dean_flag": "Y"
+  },
+  {
+    "department_id": "D-SS",
+    "department_name": "Social Sciences",
+    "department_head": "DR. PV",
+    "dean_flag": "N"
+  },
+  {
+    "department_id": "D-CS",
+    "department_name": "Computer Science",
+    "department_head": "PROF. RC",
+    "dean_flag": "N"
+  },
+  {
+    "department_id": "D-LL",
+    "department_name": "Language and Literature",
+    "department_head": "DR. JV",
+    "dean_flag": "N"
+  },
+  {
+    "department_id": "D-NS",
+    "department_name": "Natural Sciences",
+    "department_head": "PROF. RP",
+    "dean_flag": "N"
+  },
+  {
+    "department_id": "D-MATH",
+    "department_name": "Mathematics",
+    "department_head": "DR. NL",
+    "dean_flag": "N"
+  }
+]
+
+prerequisites.json
+
+
+[
+  { "course_code": "PCOM", "prerequisite_course_code": "IENG", "type": "course" },
+  { "course_code": "MMW", "prerequisite_course_code": "IMAT", "type": "course" },
+  { "course_code": "PATHFIT 2", "prerequisite_course_code": "PATHFIT 1", "type": "course" },
+  { "course_code": "PATHFIT 3", "prerequisite_course_code": "PATHFIT 2", "type": "course" },
+  { "course_code": "PATHFIT 4", "prerequisite_course_code": "PATHFIT 2", "type": "course" },
+  { "course_code": "NSTP 2", "prerequisite_course_code": "NSTP 1", "type": "course" },
+  { "course_code": "IEUTH 2", "prerequisite_course_code": "IEUTH 1", "type": "course" },
+
+  { "course_code": "IMM L", "prerequisite_course_code": "LTE L/L", "type": "course" },
+  { "course_code": "C ELE 2", "prerequisite_course_code": "LTE L/L", "type": "course" },
+  { "course_code": "C ELE 4", "prerequisite_course_code": "LTE L/L", "type": "course" },
+  { "course_code": "CC COM 4", "prerequisite_course_code": "ETH", "type": "course" },
+  { "course_code": "TH/SP 2", "prerequisite_course_code": "TH/SP 1", "type": "course" },
+  { "course_code": "COM 1", "prerequisite_course_code": "THIRD YEAR STANDING", "type": "standing" },
+
+  { "course_code": "PS 102", "prerequisite_course_code": "PS 101", "type": "course" },
+  { "course_code": "PS 104", "prerequisite_course_code": "PS 101", "type": "course" },
+  { "course_code": "PS 108", "prerequisite_course_code": "PS 101", "type": "course" },
+  { "course_code": "PS 105", "prerequisite_course_code": "PS 101", "type": "course" },
+  { "course_code": "PS 109", "prerequisite_course_code": "PS 101", "type": "course" },
+  { "course_code": "PS 103", "prerequisite_course_code": "PS 101", "type": "course" },
+  { "course_code": "PS 107", "prerequisite_course_code": "PS 101", "type": "course" },
+  { "course_code": "PS 107", "prerequisite_course_code": "PS 102", "type": "course" },
+  { "course_code": "PS 106", "prerequisite_course_code": "PS 101", "type": "course" },
+  { "course_code": "PS 106", "prerequisite_course_code": "PS 103", "type": "course" },
+  { "course_code": "PS 110", "prerequisite_course_code": "PS 106", "type": "course" },
+  { "course_code": "PS 111", "prerequisite_course_code": "THIRD YEAR STANDING", "type": "standing" },
+  { "course_code": "PS 112", "prerequisite_course_code": "THIRD YEAR STANDING", "type": "standing" },
+
+  { "course_code": "PSYCH 103", "prerequisite_course_code": "PSYCH 101", "type": "course" },
+  { "course_code": "PSYCH 104", "prerequisite_course_code": "PSYCH 101", "type": "course" },
+  { "course_code": "PSYCH 113", "prerequisite_course_code": "PSYCH 101", "type": "course" },
+  { "course_code": "PSYCH 105 L/L", "prerequisite_course_code": "PSYCH 102 L/L", "type": "course" },
+  { "course_code": "PSYCH 108", "prerequisite_course_code": "PSYCH 103", "type": "course" },
+  { "course_code": "PSYCH 108", "prerequisite_course_code": "PSYCH 107", "type": "course" },
+  { "course_code": "PSYCH 109", "prerequisite_course_code": "PSYCH 102 L/L", "type": "course" },
+  { "course_code": "PSYCH 106 L/L", "prerequisite_course_code": "PSYCH 102 L/L", "type": "course" },
+  { "course_code": "PSYCH 106 L/L", "prerequisite_course_code": "PSYCH 103", "type": "course" },
+  { "course_code": "PSYCH 110", "prerequisite_course_code": "PSYCH 109", "type": "course" },
+  { "course_code": "PSYCH 112", "prerequisite_course_code": "PSYCH 103", "type": "course" },
+  { "course_code": "PSYCH 114 L/L", "prerequisite_course_code": "PSYCH 105 L/L", "type": "course" },
+  { "course_code": "PSYCH 115", "prerequisite_course_code": "PSYCH 103", "type": "course" },
+  { "course_code": "PSYCH 115", "prerequisite_course_code": "PSYCH 112", "type": "course" },
+  { "course_code": "PSYCH ELE 1", "prerequisite_course_code": "PSYCH 103", "type": "course" },
+  { "course_code": "PSYCH ELE 1", "prerequisite_course_code": "PSYCH 112", "type": "course" },
+  { "course_code": "PSYCH PRAC", "prerequisite_course_code": "THIRD YEAR STANDING", "type": "standing" },
+
+  { "course_code": "BIO 101 L/L", "prerequisite_course_code": "BOT 101 L/L", "type": "course" },
+  { "course_code": "BIO 101 L/L", "prerequisite_course_code": "ZOO 101 L/L", "type": "course" },
+  { "course_code": "BIO 102 L/L", "prerequisite_course_code": "BOT 101 L/L", "type": "course" },
+  { "course_code": "BIO 102 L/L", "prerequisite_course_code": "ZOO 101 L/L", "type": "course" },
+  { "course_code": "BIO 104 L/L", "prerequisite_course_code": "BOT 101 L/L", "type": "course" },
+  { "course_code": "BIO 104 L/L", "prerequisite_course_code": "ZOO 101 L/L", "type": "course" },
+  { "course_code": "CHE 103 L/L", "prerequisite_course_code": "CHE 101 L/L", "type": "course" },
+  { "course_code": "BIO 105 L/L", "prerequisite_course_code": "BOT 101 L/L", "type": "course" },
+  { "course_code": "BIO 105 L/L", "prerequisite_course_code": "ZOO 101 L/L", "type": "course" },
+  { "course_code": "BIO 106 L/L", "prerequisite_course_code": "BOT 101 L/L", "type": "course" },
+  { "course_code": "BIO 106 L/L", "prerequisite_course_code": "ZOO 101 L/L", "type": "course" },
+  { "course_code": "BOT 102 L/L", "prerequisite_course_code": "BOT 101 L/L", "type": "course" },
+  { "course_code": "BIO 107 L/L", "prerequisite_course_code": "BOT 101 L/L", "type": "course" },
+  { "course_code": "BIO 107 L/L", "prerequisite_course_code": "ZOO 101 L/L", "type": "course" },
+  { "course_code": "THE 101", "prerequisite_course_code": "STA 101 L/L", "type": "course" },
+  { "course_code": "MED 102 L/L", "prerequisite_course_code": "BIO 103 L/L", "type": "course" },
+  { "course_code": "BIO 108 L/L", "prerequisite_course_code": "BOT 101 L/L", "type": "course" },
+  { "course_code": "BIO 108 L/L", "prerequisite_course_code": "ZOO 101 L/L", "type": "course" },
+  { "course_code": "BIO 108 L/L", "prerequisite_course_code": "BIO 105 L/L", "type": "course" },
+  { "course_code": "MED 101 L/L", "prerequisite_course_code": "ZOO 101 L/L", "type": "course" },
+  { "course_code": "THE 102", "prerequisite_course_code": "THE 101", "type": "course" },
+  { "course_code": "THE 103", "prerequisite_course_code": "THE 102", "type": "course" },
+  { "course_code": "PRAC 101", "prerequisite_course_code": "THIRD YEAR STANDING", "type": "standing" },
+
+  { "course_code": "CC 123 L/L", "prerequisite_course_code": "CC 112 L/L", "type": "course" },
+  { "course_code": "CS 122 L/L", "prerequisite_course_code": "CC 111 L/L", "type": "course" },
+  { "course_code": "CS 122 L/L", "prerequisite_course_code": "CC 112 L/L", "type": "course" },
+  { "course_code": "CC 134 L/L", "prerequisite_course_code": "CC 123 L/L", "type": "course" },
+  { "course_code": "CC 135 L/L", "prerequisite_course_code": "CC 123 L/L", "type": "course" },
+  { "course_code": "CC 131", "prerequisite_course_code": "CS 121", "type": "course" },
+  { "course_code": "CS 211 L/L", "prerequisite_course_code": "CS 122 L/L", "type": "course" },
+  { "course_code": "CS 211 L/L", "prerequisite_course_code": "CC 134 L/L", "type": "course" },
+  { "course_code": "CS 212 L/L", "prerequisite_course_code": "CC 135 L/L", "type": "course" },
+  { "course_code": "CS 212 L/L", "prerequisite_course_code": "CS 132 L/L", "type": "course" },
+  { "course_code": "MATH 212", "prerequisite_course_code": "MATH 131", "type": "course" },
+  { "course_code": "MATH 223", "prerequisite_course_code": "MATH 212", "type": "course" },
+  { "course_code": "CS 221", "prerequisite_course_code": "CS 122 L/L", "type": "course" },
+  { "course_code": "CS 221", "prerequisite_course_code": "CC 134 L/L", "type": "course" },
+  { "course_code": "CS 223 L/L", "prerequisite_course_code": "CS 212 L/L", "type": "course" },
+  { "course_code": "CS 231 L/L", "prerequisite_course_code": "CS 223 L/L", "type": "course" },
+  { "course_code": "CS 232 L/L", "prerequisite_course_code": "CC 134 L/L", "type": "course" },
+  { "course_code": "CS 232 L/L", "prerequisite_course_code": "CC 135 L/L", "type": "course" },
+  { "course_code": "CS 311", "prerequisite_course_code": "MATH 223", "type": "course" },
+  { "course_code": "CS 312", "prerequisite_course_code": "CS 231 L/L", "type": "course" },
+  { "course_code": "CS 313 L/L", "prerequisite_course_code": "CS 232 L/L", "type": "course" },
+  { "course_code": "CS 314 L/L", "prerequisite_course_code": "CS 211 L/L", "type": "course" },
+  { "course_code": "CS THS 1", "prerequisite_course_code": "CS 313 L/L", "type": "course" },
+  { "course_code": "CSC 326 L/L", "prerequisite_course_code": "CC 134 L/L", "type": "course" },
+  { "course_code": "CSC 326 L/L", "prerequisite_course_code": "CC 135 L/L", "type": "course" },
+  { "course_code": "CS 321", "prerequisite_course_code": "CS 311", "type": "course" },
+  { "course_code": "CS 322 L/L", "prerequisite_course_code": "CS 314 L/L", "type": "course" },
+  { "course_code": "CS THS 2", "prerequisite_course_code": "CS THS 1", "type": "course" },
+  { "course_code": "CS PRC", "prerequisite_course_code": "THIRD YEAR STANDING", "type": "standing" },
+
+  { "course_code": "CSIS 1", "prerequisite_course_code": "CC 134 L/L", "type": "course" },
+  { "course_code": "CSIS 1", "prerequisite_course_code": "MATH 131", "type": "course" },
+  { "course_code": "CSIS 1", "prerequisite_course_code": "CS 132 L/L", "type": "course" },
+  { "course_code": "CSIS 2", "prerequisite_course_code": "CSIS 1", "type": "course" },
+  { "course_code": "CSIS 3", "prerequisite_course_code": "CSIS 2", "type": "course" },
+
+  { "course_code": "CSDC 1", "prerequisite_course_code": "CC 135 L/L", "type": "course" },
+  { "course_code": "CSDC 1", "prerequisite_course_code": "MATH 131", "type": "course" },
+  { "course_code": "CSDC 1", "prerequisite_course_code": "CC 123 L/L", "type": "course" },
+  { "course_code": "CSDC 2", "prerequisite_course_code": "CSDC 1", "type": "course" },
+  { "course_code": "CSDC 3", "prerequisite_course_code": "CSDC 2", "type": "course" },
+
+  { "course_code": "CSRA 1", "prerequisite_course_code": "CS 122 L/L", "type": "course" },
+  { "course_code": "CSRA 1", "prerequisite_course_code": "MATH 131", "type": "course" },
+  { "course_code": "CSRA 1", "prerequisite_course_code": "CS 132 L/L", "type": "course" },
+  { "course_code": "CSRA 2", "prerequisite_course_code": "CSRA 1", "type": "course" },
+  { "course_code": "CSRA 3", "prerequisite_course_code": "CSRA 2", "type": "course" },
+
+  {
+    "course_code": "IENG",
+    "prerequisite_course_code": "ENGLISH DIAGNOSTIC TEST",
+    "type": "placement"
+  },
+  {
+    "course_code": "IMAT",
+    "prerequisite_course_code": "MATH DIAGNOSTIC TEST",
+    "type": "placement"
+  }
+]

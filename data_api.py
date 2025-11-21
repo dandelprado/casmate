@@ -84,13 +84,26 @@ DEPT_SYNONYMS = {
 
 
 def _normalize_phrase(s: str) -> str:
+    """
+    Lowercase, strip punctuation, collapse spaces,
+    and singularize simple plurals for *all* tokens.
+
+    """
     t = (s or "").lower()
     t = _PUNCT.sub(" ", t)
     t = _WS.sub(" ", t).strip()
+    if not t:
+        return ""
+
     parts = t.split()
-    if parts and len(parts[-1]) > 3 and parts[-1].endswith("s"):
-        parts[-1] = parts[-1][:-1]
-    return " ".join(parts)
+    singular_parts: List[str] = []
+    for p in parts:
+        if len(p) > 3 and p.endswith("s"):
+            singular_parts.append(p[:-1])
+        else:
+            singular_parts.append(p)
+
+    return " ".join(singular_parts)
 
 
 def _clean_course_query(text: str) -> str:
@@ -280,6 +293,12 @@ def fuzzy_top_course_titles(
 
 
 def _keyword_match_course(courses: List[Dict], text: str) -> Optional[Dict]:
+    """
+
+    For multi-word queries (>= 2 tokens), require at least 2 overlapping tokens
+    to accept a course. Otherwise, return None so that fuzzy matching can
+    decide, which helps cases like 'data struct' -> 'Data Structures and Algorithm'.
+    """
     clean = _clean_course_query(text)
     if not clean:
         return None
@@ -287,6 +306,9 @@ def _keyword_match_course(courses: List[Dict], text: str) -> Optional[Dict]:
     q_tokens = set(clean.split())
     if not q_tokens:
         return None
+
+    token_count = len(q_tokens)
+    required_overlap = 1 if token_count == 1 else 2
 
     best_course: Optional[Dict] = None
     best_overlap = 0
@@ -300,8 +322,7 @@ def _keyword_match_course(courses: List[Dict], text: str) -> Optional[Dict]:
             best_overlap = overlap
             best_course = c
 
-    # Require at least one overlapping token to avoid nonsense matches.
-    if best_overlap > 0:
+    if best_overlap >= required_overlap:
         return best_course
 
     return None
