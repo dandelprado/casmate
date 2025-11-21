@@ -20,3 +20,7 @@ Prerequistie of Math in the Modern World?
 Modern World Prerequisite?
 
 Pathfit prerequisite
+
+## Subjects
+
+Can answer subjects per year

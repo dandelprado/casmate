@@ -87,7 +87,6 @@ def _normalize_phrase(s: str) -> str:
     """
     Lowercase, strip punctuation, collapse spaces,
     and singularize simple plurals for *all* tokens.
-
     """
     t = (s or "").lower()
     t = _PUNCT.sub(" ", t)
@@ -385,7 +384,6 @@ def fuzzy_top_course_titles(
 
 def _keyword_match_course(courses: List[Dict], text: str) -> Optional[Dict]:
     """
-
     For multi-word queries (>= 2 tokens), require at least 2 overlapping tokens
     to accept a course. Otherwise, return None so that fuzzy matching can
     decide, which helps cases like 'data struct' -> 'Data Structures and Algorithm'.
@@ -442,7 +440,6 @@ def course_by_alias(data: Dict, alias: str) -> Optional[Dict]:
     return None
 
 
-
 def find_course_any(data: Dict, text: str) -> Optional[Dict]:
     courses = data.get("courses", [])
     if not text or not courses:
@@ -486,127 +483,68 @@ def find_course_any(data: Dict, text: str) -> Optional[Dict]:
     return None
 
 
-def _clean_program_query(text: str) -> str:
-    base = _normalize_phrase(text)
-    if not base:
-        return base
-
-    tokens = base.split()
-    remove = {
-        "what",
-        "whats",
-        "what's",
-        "how",
-        "many",
-        "is",
-        "are",
-        "does",
-        "do",
-        "the",
-        "a",
-        "an",
-        "of",
-        "for",
-        "in",
-        "on",
-        "about",
-        "regarding",
-        "take",
-        "need",
-        # unit / load words
-        "unit",
-        "units",
-        "load",
-        "total",
-        # year / level
-        "year",
-        "yr",
-        "freshman",
-        "sophomore",
-        "junior",
-        "senior",
-        "first",
-        "1st",
-        "second",
-        "2nd",
-        "third",
-        "3rd",
-        "fourth",
-        "4th",
-        # term / sem
-        "sem",
-        "sem.",
-        "semester",
-        "trimester",
-        "term",
-    }
-
-    kept = [t for t in tokens if t not in remove]
-    return " ".join(kept) if kept else base
-
-
 def fuzzy_best_program(
     programs: List[Dict], query: str, score_cutoff: int = 70
 ) -> Optional[Tuple[str, int, Dict]]:
     if not query:
         return None
 
+    raw = (query or "").strip()
+    raw_upper = raw.upper()
+
+    raw_tokens = [t for t in re.split(r"\s+", raw_upper) if t]
+
+    abbrev_candidates = []
+    for tok in raw_tokens:
+        if tok in PROGRAM_ABBREV:
+            abbrev_candidates.append(tok)
+    if raw_upper in PROGRAM_ABBREV and raw_upper not in abbrev_candidates:
+        abbrev_candidates.append(raw_upper)
+
+    if abbrev_candidates:
+        key = abbrev_candidates[0]
+        target_full = PROGRAM_ABBREV[key].upper()
+
+        for p in programs:
+            pname = (p.get("program_name") or "").strip().upper()
+            sname = (p.get("short_name") or "").strip().upper()
+
+            if pname == target_full or sname == target_full or target_full in pname:
+                return (raw, 100, p)
+
     cleaned = _clean_program_query(query)
     use_query = cleaned or query
     query_upper = use_query.strip().upper()
-    tokens = use_query.split()
 
-    for tok in tokens:
-        tok_upper = tok.upper()
-        if tok_upper in PROGRAM_ABBREV:
-            target_name = PROGRAM_ABBREV[tok_upper]
-            for p in programs:
-                if (p.get("program_name") or "").strip().upper() == target_name.upper():
-                    return (use_query, 100, p)
-
-    # 1) Whole-string abbreviation hit via PROGRAM_ABBREV, then map to a program row.
-    if query_upper in PROGRAM_ABBREV:
-        target_name = PROGRAM_ABBREV[query_upper]
-        for p in programs:
-            if (p.get("program_name") or "").strip().upper() == target_name.upper():
-                return (use_query, 100, p)
-
-    # 2) Exact match on full program name (program_name).
     for p in programs:
         pname = (p.get("program_name") or "").strip()
         if pname and pname.upper() == query_upper:
             return (pname, 100, p)
 
-    # 3) Substring match on full program name (e.g., 'PSYCHOLOGY' in 'Bachelor of Science in Psychology').
     for p in programs:
         pname = (p.get("program_name") or "").strip()
         if pname and query_upper in pname.upper():
             return (pname, 95, p)
 
-    # 4) Exact and substring match on short_name (e.g., 'BS Psychology', 'BS Computer Science').
     for p in programs:
         sname = (p.get("short_name") or "").strip()
         if sname and sname.upper() == query_upper:
-            return (p.get("program_name"), 100, p)
+            return (p.get("program_name") or sname, 100, p)
         if sname and query_upper in sname.upper():
-            return (p.get("program_name"), 95, p)
+            return (p.get("program_name") or sname, 95, p)
 
-    # 5) Build a choices dict of all names/aliases we know.
     choices: Dict[str, Dict] = {}
 
-    # Full program names.
     for p in programs:
         name = p.get("program_name") or ""
         if name:
             choices[name] = p
 
-    # Short names.
     for p in programs:
         sname = p.get("short_name") or ""
         if sname:
             choices[sname] = p
 
-    # Short forms like 'Computer Science', 'Psychology' derived from long names.
     for p in programs:
         name = p.get("program_name") or ""
         low = name.lower()
@@ -619,19 +557,18 @@ def fuzzy_best_program(
             if short:
                 choices[short] = p
 
-    # Abbreviations from PROGRAM_ABBREV (CS, BSCS, PSYCH, BIO, etc.).
     for abbrev, full_name in PROGRAM_ABBREV.items():
-        row = next(
-            (p for p in programs if (p.get("program_name") or "").upper() == full_name.upper()),
-            None,
-        )
-        if row:
-            choices[abbrev] = row
+        full_up = full_name.upper()
+        for p in programs:
+            pname = (p.get("program_name") or "").strip().upper()
+            sname = (p.get("short_name") or "").strip().upper()
+            if pname == full_up or sname == full_up or full_up in pname:
+                choices[abbrev] = p
+                break
 
     if not choices:
         return None
 
-    # 6) Final fuzzy match over all keys (full names, shorts, and abbreviations).
     result = process.extractOne(
         use_query,
         list(choices.keys()),
