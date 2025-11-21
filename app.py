@@ -704,6 +704,7 @@ def handle_prereq(user_text: str, ents: dict) -> str:
     return "\n".join(lines)
 
 
+
 def handle_units(user_text: str, ents: dict) -> str:
     programs = data["programs"]
     plan = data["plan"]
@@ -734,27 +735,110 @@ def handle_units(user_text: str, ents: dict) -> str:
     pname = prog_row["program_name"]
     pname_lower = (pname or "").lower()
 
-    # 2) Require a year level.
-    year = ents.get("year_num")
-    if not year:
-        return (
-            f"For {pname}, I'll also need the year level so I can total the units.\n"
-            f"Some examples you can ask:\n"
-            f"• How many units does 1st year {pname} take?\n"
-            f"• How many units does 2nd year {pname} take?"
-        )
-
-    # 3) Get per-trimester units and per-trimester diagnostic flags.
-    total_units, by_sem, diagnostic_by_sem = units_by_program_year_with_exclusions(
-        plan, courses, pid, year
-    )
-
+    # Common labels we will reuse for both program-wide and year-specific answers.
     year_labels = {
         1: "First year",
         2: "Second year",
         3: "Third year",
         4: "Fourth year",
     }
+    term_labels = {
+        1: "First trimester",
+        2: "Second trimester",
+        3: "Third trimester",
+    }
+
+    # 2) If no specific year is mentioned, return a full program summary
+    #    (units by year, by trimester, plus an overall total).
+    year = ents.get("year_num")
+    if not year:
+        # Special-case message for BA English if there is no plan data at all.
+        has_entries = any((entry.get("program_id") == pid) for entry in plan)
+        if not has_entries and "english language" in pname_lower:
+            return (
+                "The detailed unit loading for BA in English Language isn’t loaded in this system yet.\n\n"
+                "For accurate and up-to-date information on units per year or semester, "
+                "please check directly with the Department of Language and Literature. "
+                "You can start with the department head, DR. JV, for curriculum and unit questions."
+            )
+
+        # Collect all year levels that actually exist for this program in the plan.
+        year_values: list[int] = []
+        for entry in plan:
+            if entry.get("program_id") != pid:
+                continue
+            yl = entry.get("year_level")
+            try:
+                y_int = int(str(yl))
+            except Exception:
+                continue
+            if y_int not in year_values:
+                year_values.append(y_int)
+
+        year_values = sorted(year_values)
+        if not year_values:
+            return (
+                f"I couldn't find unit data for {pname} "
+                f"in the current curriculum plan."
+            )
+
+        lines: list[str] = [
+            f"Total units for {pname} by year "
+            f"(excluding diagnostic review subjects):"
+        ]
+
+        overall_total = 0
+        any_diag_across = False
+
+        for y in year_values:
+            total_y, by_sem_y, diag_by_sem_y = units_by_program_year_with_exclusions(
+                plan, courses, pid, y
+            )
+            if not by_sem_y:
+                continue
+
+            any_diag_across = any_diag_across or any(diag_by_sem_y.values())
+            y_label = year_labels.get(y, f"Year {y}")
+
+            lines.append("")
+            lines.append(f"{y_label}:")
+            for sem_key, units in sorted(by_sem_y.items(), key=lambda kv: int(kv[0])):
+                sem = int(sem_key)
+                sem_label = term_labels.get(sem, f"Trimester {sem}")
+                lines.append(f"• {sem_label}: {units} units")
+
+            lines.append(f"Overall for {y_label}: {total_y} units")
+            overall_total += total_y
+
+        if overall_total == 0:
+            return (
+                f"I couldn't find unit data for {pname} "
+                f"in the current curriculum plan."
+            )
+
+        lines.append("")
+        overall_line = "Overall total for the full program"
+        if any_diag_across:
+            overall_line += " (excluding IMAT/IENG)"
+        overall_line += f": {overall_total} units"
+        lines.append(overall_line)
+
+        if any_diag_across:
+            lines.append(
+                "Note: Diagnostic review subjects like IMAT (Math Review) and "
+                "IENG (English Review) depend on your placement/diagnostic test "
+                "results, so they’re not included here. Please inquire with the "
+                "Guidance Office via their Facebook page "
+                "https://www.facebook.com/NWUGuidance."
+            )
+
+        return "\n".join(lines)
+
+    # 3) Year-level query (your existing behavior), now reusing year_labels/term_labels.
+    total_units, by_sem, diagnostic_by_sem = units_by_program_year_with_exclusions(
+        plan, courses, pid, year
+    )
+
     year_label = year_labels.get(year, f"Year {year}")
 
     # BA English: explicit “not loaded yet” message for units.
@@ -773,11 +857,6 @@ def handle_units(user_text: str, ents: dict) -> str:
         )
 
     term = ents.get("term_num")
-    term_labels = {
-        1: "First trimester",
-        2: "Second trimester",
-        3: "Third trimester",
-    }
 
     lines: list[str] = []
 
@@ -817,7 +896,7 @@ def handle_units(user_text: str, ents: dict) -> str:
 
         return "\n".join(lines)
 
-    # 5) Year-level query.
+    # 5) Year-level (no specific term): list all trimesters for that year.
     any_diag = any(diagnostic_by_sem.values())
 
     if any_diag:
