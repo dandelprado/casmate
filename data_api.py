@@ -10,11 +10,10 @@ DATADIR = (Path(__file__).parent / "data").resolve()
 _WS = re.compile(r"\s+")
 _PUNCT = re.compile(r"[^\w\s]")
 
-CODE_RE = re.compile(r"\b([A-Za-z]{2,4})-?(\d{2,3})\b")
+CODE_RE = re.compile(r"\b([A-Za-z]{2,4})[\s-]?(\d{2,})\b")
 
 
 PROGRAM_ABBREV = {
-    # BS Computer Science
     "CS": "Bachelor of Science in Computer Science",
     "BSCS": "Bachelor of Science in Computer Science",
     "COMPUTER SCIENCE": "Bachelor of Science in Computer Science",
@@ -26,13 +25,11 @@ PROGRAM_ABBREV = {
     "BS COM SCI": "Bachelor of Science in Computer Science",
     "BSCOMSCI": "Bachelor of Science in Computer Science",
 
-    # BS Psychology
     "PSYCH": "Bachelor of Science in Psychology",
     "BS PSYCH": "Bachelor of Science in Psychology",
     "BSPSYCH": "Bachelor of Science in Psychology",
     "PSYCHOLOGY": "Bachelor of Science in Psychology",
 
-    # BA Political Science
     "POLSAY": "Bachelor of Arts in Political Science",
     "POLSCI": "Bachelor of Arts in Political Science",
     "AB POLSCI": "Bachelor of Arts in Political Science",
@@ -46,11 +43,9 @@ PROGRAM_ABBREV = {
     "BAPS": "Bachelor of Arts in Political Science",
     "BA PS": "Bachelor of Arts in Political Science",
 
-    # BA English Language
     "BAEL": "BA in English Language",
     "ABEL": "BA in English Language",
 
-    # BA Communication
     "BACOMM": "Bachelor of Arts in Communication",
     "COMM": "Bachelor of Arts in Communication",
     "COMMUNICATION": "Bachelor of Arts in Communication",
@@ -58,7 +53,6 @@ PROGRAM_ABBREV = {
     "AB COMM": "Bachelor of Arts in Communication",
     "BA COMM": "Bachelor of Arts in Communication",
 
-    # BS Biology
     "BIO": "Bachelor of Science in Biology",
     "BS BIO": "Bachelor of Science in Biology",
     "BSBIO": "Bachelor of Science in Biology",
@@ -84,10 +78,6 @@ DEPT_SYNONYMS = {
 
 
 def _normalize_phrase(s: str) -> str:
-    """
-    Lowercase, strip punctuation, collapse spaces,
-    and singularize simple plurals for *all* tokens.
-    """
     t = (s or "").lower()
     t = _PUNCT.sub(" ", t)
     t = _WS.sub(" ", t).strip()
@@ -168,7 +158,6 @@ def _clean_program_query(text: str) -> str:
 
     tokens = base.split()
     remove = {
-        # question / glue words
         "what",
         "whats",
         "what's",
@@ -189,12 +178,10 @@ def _clean_program_query(text: str) -> str:
         "regarding",
         "take",
         "need",
-        # unit / load words
         "unit",
         "units",
         "load",
         "total",
-        # year / level
         "year",
         "yr",
         "freshman",
@@ -209,7 +196,6 @@ def _clean_program_query(text: str) -> str:
         "3rd",
         "fourth",
         "4th",
-        # term / sem
         "sem",
         "sem.",
         "semester",
@@ -383,11 +369,6 @@ def fuzzy_top_course_titles(
 
 
 def _keyword_match_course(courses: List[Dict], text: str) -> Optional[Dict]:
-    """
-    For multi-word queries (>= 2 tokens), require at least 2 overlapping tokens
-    to accept a course. Otherwise, return None so that fuzzy matching can
-    decide, which helps cases like 'data struct' -> 'Data Structures and Algorithm'.
-    """
     clean = _clean_course_query(text)
     if not clean:
         return None
@@ -446,25 +427,38 @@ def find_course_any(data: Dict, text: str) -> Optional[Dict]:
         return None
 
     text_upper = (text or "").upper()
-    no_space = text_upper.replace(" ", "")
-
-    for c in courses:
-        code = (c.get("course_code") or c.get("course_id") or "").upper()
-        if not code:
-            continue
-        code_no_space = code.replace(" ", "").replace("-", "")
-        if code in text_upper or code_no_space in no_space:
-            return c
-
-    m = CODE_RE.search(text or "")
+    
+    m = CODE_RE.search(text_upper)
     if m:
-        code = f"{m.group(1)}{m.group(2)}"
-        found = find_course_by_code(courses, code)
+        extracted_code = f"{m.group(1)}{m.group(2)}" 
+        
+        found = find_course_by_code(courses, extracted_code)
         if found:
             return found
+        
+        for c in courses:
+            c_code = (c.get("course_code") or "").strip().upper().replace(" ", "").replace("-", "")
+            if c_code.startswith(extracted_code):
+                return c
+        
+        return None
+
+    for c in courses:
+        code = (c.get("course_code") or c.get("course_id") or "").strip().upper()
+        if not code:
+            continue
+        
+        escaped_parts = [re.escape(part) for part in code.split()]
+        pattern_str = r"\b" + r"[\s-]*".join(escaped_parts) + r"\b"
+        
+        if re.search(pattern_str, text_upper):
+            return c
 
     clean_for_program = _clean_course_query(text)
     if not clean_for_program:
+        return None
+
+    if " " not in clean_for_program and any(char.isdigit() for char in clean_for_program):
         return None
 
     alias_hit = course_by_alias(data, text)
@@ -810,4 +804,3 @@ def get_cas_dean(departments: List[Dict]) -> Optional[Dict]:
         (d for d in departments if (d.get("dean_flag") or "N").upper() == "Y"),
         None,
     )
-

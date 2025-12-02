@@ -45,34 +45,16 @@ Computer Science courses?
 1st year cs subjects?
 1st year cs courses?
 
+What's the prerequisite of CC 111? 
+What are the prerequisite of CC 123
+What are the prerequisite of CC 111 L/L
+What's the prerequisite of CC 111 L/L
+What are the prerequisite of CC 111 L/L
+What's the prerequisite of CC 123?
+What's the prerequisite of CC 123 L/L
+Prerequisites for CC 111
+Check CC 123 prerequisites
 
-### 
+# Findings
 
-Bio handlings.
-
-Multipel biology names, it's confusing. 
-
-## Test
-
-Question: BSCS subjects?
-Answer: For Bachelor of Science in Computer Science, please specify a year level, for example '1st year Bachelor of Science in Computer Science subjects?' or '2nd year Bachelor of Science in Computer Science courses?'.
-
-In here, I think it would be nice if it can sound more human. For example, it could tell, I could list you all the subjects for Bachelor of Science in Computer Science but that would be a wall of text. Would you like to check a specific year level instead? If yes, which year? And which term? Something along those lines of probing. If user answered no, then provide the full list. 
-
-Is this possible? 
-
-Question: BSBIO courses?
-Question: BS BIO Courses?
-Answer: Could you clarify what you need? Happy to help with prerequisites, unit loads, or department leadership.
-
-For some reason, it didn't seem to understand or identify that BSBIO is Bachelor of Science in Biology, which is a program? 
-
-Question: ABEL courses?
-Question: BAEL courses?
-It should already tell that it does not yet have the Bachelor of Arts in English Language program data. For the meantime, it should contact the head of language and literature department, something like that. 
-
-Question : 1st year cs subjects?
-
-Same as the 1st question. Should ask a probing question instead of providing a wall of text.
-
-Also, whenever there is IMAT or IENG subject, it should include a note together with the link to the guidance to contact. 
+1. Finding 1 fixed

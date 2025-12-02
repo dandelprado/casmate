@@ -10,7 +10,7 @@ matcher = Matcher(nlp.vocab)
 phrase_matcher = PhraseMatcher(nlp.vocab, attr="LOWER")
 
 WS_RE = re.compile(r"\s+")
-CODE_RE = re.compile(r"\b([A-Za-z]{2,4})-?(\d{2,3})\b")
+CODE_RE = re.compile(r"\b([A-Za-z]{2,4})[\s-]?(\d{2,})\b")
 
 
 PROGRAM_CANON = {
@@ -68,17 +68,7 @@ def build_gazetteers(
     courses: List[Dict],
     departments: Optional[List[Dict]] = None,
 ) -> None:
-    """
-    Build spaCy PhraseMatcher patterns for:
-      - PROG: program names and abbreviations
-      - COURSETITLE: full course titles (from JSON only)
-      - DEPT: department names and aliases
 
-    All hand-written course aliases like 'data struct', 'calc', 'psych',
-    and 'bio' have been removed so this function only depends on your data.
-    """
-
-    # ----- Programs (PROG) -----
     if "PROG" in phrase_matcher:
         phrase_matcher.remove("PROG")
 
@@ -92,7 +82,6 @@ def build_gazetteers(
     for p in programs:
         name = p.get("program_name") or ""
         low = name.lower()
-        # Also index program names without leading "BS " / "BA "
         if low.startswith("bs "):
             base_docs.append(nlp(name[3:]))
         elif low.startswith("ba "):
@@ -104,11 +93,9 @@ def build_gazetteers(
     if all_prog_docs:
         phrase_matcher.add("PROG", all_prog_docs)
 
-    # ----- Course titles (COURSETITLE) -----
     if "COURSETITLE" in phrase_matcher:
         phrase_matcher.remove("COURSETITLE")
 
-    # Only index the actual course titles from courses.json
     title_docs = [
         nlp(c["course_title"])
         for c in courses
@@ -118,7 +105,6 @@ def build_gazetteers(
     if title_docs:
         phrase_matcher.add("COURSETITLE", title_docs)
 
-    # ----- Departments (DEPT) -----
     if "DEPT" in phrase_matcher:
         phrase_matcher.remove("DEPT")
 
@@ -160,6 +146,11 @@ matcher.add(
             {"LOWER": {"IN": ["i", "we"]}, "OP": "?"},
             {"LOWER": {"IN": ["need", "take"]}},
             {"LOWER": {"IN": ["before", "for", "prior"]}},
+        ],
+        [
+            {"LOWER": "does"},
+            {"OP": "+"}, 
+            {"LOWER": {"IN": ["require", "requirements"]}},
         ],
     ],
 )
@@ -225,7 +216,6 @@ def detect_intent(text: str) -> str:
     labels = [nlp.vocab.strings[mid] for mid, _, _ in matcher(doc)]
     tlow = (text or "").lower().strip()
 
-    # Department head / leadership questions
     if "dean" in tlow:
         return "dept_head_one"
     if "heads" in tlow or "leadership" in tlow:
@@ -257,31 +247,25 @@ def detect_intent(text: str) -> str:
         has_prog_hint = any(
             x in tlow
             for x in [
-                # Computer Science
                 "cs",
                 "computer science",
                 "bscs",
                 "bs cs",
-                # Psychology
                 "psych",
                 "psychology",
                 "bs psych",
-                # Biology
                 "bio",
                 "biology",
                 "bsbio",
                 "bs bio",
-                # Political Science
                 "political science",
                 "polsci",
                 "ab ps",
                 "abps",
                 "baps",
                 "ba ps",
-                # Communication
                 "communication",
                 "comm",
-                # English Language
                 "bael",
                 "abel",
                 "english language",
@@ -298,31 +282,25 @@ def detect_intent(text: str) -> str:
     has_prog_only = any(
         x in tlow
         for x in [
-            # Computer Science
             "cs",
             "computer science",
             "bscs",
             "bs cs",
-            # Psychology
             "psych",
             "psychology",
             "bs psych",
-            # Biology
             "bio",
             "biology",
             "bsbio",
             "bs bio",
-            # Political Science
             "political science",
             "polsci",
             "ab ps",
             "abps",
             "baps",
             "ba ps",
-            # Communication
             "communication",
             "comm",
-            # English Language
             "bael",
             "abel",
             "english language",
@@ -331,7 +309,6 @@ def detect_intent(text: str) -> str:
     if has_year_only and has_prog_only:
         return "curriculum"
 
-    # Fallback: course info / single-course questions
     return "courseinfo"
 
 
@@ -353,22 +330,13 @@ def _extract_year(text: str) -> Optional[int]:
 
 
 def _extract_term(text: str) -> Optional[int]:
-    """
-    Extract a term/semester number (1–3) from text, based on phrases like
-    '1st semester', 'first trimester', '2nd term', etc.
-    """
     tl = (text or "").lower()
-
-    # 1st / first
     if re.search(r"\b(1st|first)\s+(sem|sem\.|semester|trimester|term)\b", tl):
         return 1
-    # 2nd / second
     if re.search(r"\b(2nd|second)\s+(sem|sem\.|semester|trimester|term)\b", tl):
         return 2
-    # 3rd / third
     if re.search(r"\b(3rd|third)\s+(sem|sem\.|semester|trimester|term)\b", tl):
         return 3
-
     return None
 
 
@@ -402,4 +370,3 @@ def extract_entities(text: str) -> Dict[str, Optional[str]]:
     ents["term_num"] = _extract_term(text)
 
     return ents
-
