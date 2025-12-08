@@ -55,11 +55,11 @@ What's the prerequisite of CC 123 L/L
 Prerequisites for CC 111
 Check CC 123 prerequisites
 
-# Findings
-
-1. Finding 1 fixed
+medical microbiology prerequisite?
+is there a prereq for subjects
 
 # Issue 
 
-is there a prereq for subjects
+is there a prereq for medical microbiology?
+
 

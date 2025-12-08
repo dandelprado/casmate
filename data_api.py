@@ -304,10 +304,42 @@ def find_course_any(data: Dict, text: str) -> Tuple[Optional[Dict], str]:
                     return c, "fuzzy_code"
 
     text_norm = _normalize_phrase(text)
+    clean_text_norm = _normalize_phrase(clean_for_alias)
+    
+    exact_matches = []
     for c in courses:
         title = c.get("course_title", "")
-        if _normalize_phrase(title) == text_norm:
-            return c, "exact_title"
+        t_norm = _normalize_phrase(title)
+        if t_norm == text_norm or t_norm == clean_text_norm:
+            exact_matches.append(c)
+    
+    if exact_matches:
+        return exact_matches[0], "exact_title"
+
+    text_tokens = set(clean_text_norm.split())
+    if len(text_tokens) >= 1:
+        best_candidate = None
+        best_overlap_ratio = 0.0
+        
+        for c in courses:
+            title = c.get("course_title", "")
+            title_norm = _normalize_phrase(title)
+            title_tokens = set(title_norm.split())
+            if not title_tokens: continue
+            
+            intersection = text_tokens.intersection(title_tokens)
+            
+            
+            
+            if len(intersection) == len(text_tokens):
+                ratio = len(intersection) / len(title_tokens)
+                if ratio > best_overlap_ratio:
+                    best_overlap_ratio = ratio
+                    best_candidate = c
+        
+        
+        if best_candidate and best_overlap_ratio >= 0.8:
+             return best_candidate, "exact_title_subset"
 
     for c in courses:
         code = (c.get("course_code") or c.get("course_id") or "").strip().upper()

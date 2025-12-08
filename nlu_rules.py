@@ -1,5 +1,5 @@
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import spacy
 from spacy.matcher import Matcher, PhraseMatcher
@@ -12,13 +12,16 @@ phrase_matcher = PhraseMatcher(nlp.vocab, attr="LOWER")
 WS_RE = re.compile(r"\s+")
 CODE_RE = re.compile(r"\b([A-Za-z]{2,4})[\s-]?(\d{2,})\b")
 
-
 PROGRAM_CANON = {
     "CS": "BS in Computer Science",
     "BSCS": "BS in Computer Science",
+    "COMPUTER SCIENCE": "BS in Computer Science",
+    "BS COMPUTER SCIENCE": "BS in Computer Science",
 
     "PSYCH": "BS in Psychology",
     "BS PSYCH": "BS in Psychology",
+    "PSYCHOLOGY": "BS in Psychology",
+    "BS PSYCHOLOGY": "BS in Psychology",
 
     "POLSAY": "BA in Political Science",
     "POLSCI": "BA in Political Science",
@@ -27,22 +30,30 @@ PROGRAM_CANON = {
     "ABPS": "BA in Political Science",
     "BAPS": "BA in Political Science",
     "BA PS": "BA in Political Science",
+    "POLITICAL SCIENCE": "BA in Political Science",
+    "BA POLITICAL SCIENCE": "BA in Political Science",
+    "AB POLITICAL SCIENCE": "BA in Political Science",
 
     "BAEL": "BA in English Language",
     "ABEL": "BA in English Language",
+    "ENGLISH LANGUAGE": "BA in English Language",
 
     "BACOMM": "BA in Communications",
     "COMM": "BA in Communications",
+    "COMMUNICATION": "BA in Communications",
+    "COMMUNICATIONS": "BA in Communications",
+    "AB COMM": "BA in Communications",
+    "BA COMM": "BA in Communications",
+    "BA COMMUNICATION": "BA in Communications",
 
     "BIO": "BS in Biology",
     "BS BIO": "BS in Biology",
+    "BIOLOGY": "BS in Biology",
+    "BS BIOLOGY": "BS in Biology",
 }
-
-
 
 def norm_key(s: str) -> str:
     return "".join(s or "").strip().upper()
-
 
 PROGRAM_ABBREVIATIONS: Dict[str, str] = {norm_key(k): v for k, v in PROGRAM_CANON.items()}
 
@@ -55,13 +66,9 @@ DEPT_ALIASES = [
     "Mathematics", "Math", "Math Department", "Math Dept",
 ]
 
-YEAR_WORDS = {
-    "first": 1, "1st": 1, "year 1": 1, "yr 1": 1, "freshman": 1,
-    "second": 2, "2nd": 2, "year 2": 2, "yr 2": 2, "sophomore": 2,
-    "third": 3, "3rd": 3, "year 3": 3, "yr 3": 3, "junior": 3,
-    "fourth": 4, "4th": 4, "year 4": 4, "yr 4": 4, "senior": 4,
+YEAR_MAP_STRICT = {
+    "freshman": 1, "sophomore": 2, "junior": 3, "senior": 4
 }
-
 
 def build_gazetteers(
     programs: List[Dict],
@@ -122,7 +129,6 @@ def build_gazetteers(
 
 def add_lower_in(name: str, words: List[str]) -> None:
     matcher.add(name, [[{"LOWER": {"IN": words}}]])
-
 
 add_lower_in("INTENT_GREET", ["hi", "hello", "hey"])
 add_lower_in("INTENT_GOODBYE", ["bye", "goodbye", "thanks", "thank", "tnx"])
@@ -210,7 +216,6 @@ matcher.add(
     ],
 )
 
-
 def detect_intent(text: str) -> str:
     doc = nlp(text or "")
     labels = [nlp.vocab.strings[mid] for mid, _, _ in matcher(doc)]
@@ -238,96 +243,54 @@ def detect_intent(text: str) -> str:
     if "INTENT_UNITS" in labels or re.search(r"\bunits?\b", tlow):
         return "units"
 
-    if any(w in tlow for w in ["subject", "subjects", "course", "courses", "curriculum"]):
-        has_year_hint = (
-            "year" in tlow
-            or "yr " in tlow
-            or any(x in tlow for x in ["1st", "2nd", "3rd", "4th", "first", "second", "third", "fourth"])
-        )
-        has_prog_hint = any(
-            x in tlow
-            for x in [
-                "cs",
-                "computer science",
-                "bscs",
-                "bs cs",
-                "psych",
-                "psychology",
-                "bs psych",
-                "bio",
-                "biology",
-                "bsbio",
-                "bs bio",
-                "political science",
-                "polsci",
-                "ab ps",
-                "abps",
-                "baps",
-                "ba ps",
-                "communication",
-                "comm",
-                "bael",
-                "abel",
-                "english language",
-            ]
-        )
-        if has_year_hint or has_prog_hint:
-            return "curriculum"
-
-    has_year_only = (
+    has_year_hint = (
         "year" in tlow
         or "yr " in tlow
-        or any(x in tlow for x in ["1st", "2nd", "3rd", "4th", "first", "second", "third", "fourth"])
+        or any(x in tlow for x in ["1st", "2nd", "3rd", "4th", "first", "second", "third", "fourth", "freshman", "sophomore", "junior", "senior"])
     )
-    has_prog_only = any(
+    
+    has_prog_hint = any(
         x in tlow
         for x in [
-            "cs",
-            "computer science",
-            "bscs",
-            "bs cs",
-            "psych",
-            "psychology",
-            "bs psych",
-            "bio",
-            "biology",
-            "bsbio",
-            "bs bio",
-            "political science",
-            "polsci",
-            "ab ps",
-            "abps",
-            "baps",
-            "ba ps",
-            "communication",
-            "comm",
-            "bael",
-            "abel",
-            "english language",
+            "cs", "computer science", "bscs", "bs cs",
+            "psych", "psychology", "bs psych",
+            "bio", "biology", "bsbio", "bs bio",
+            "political science", "polsci", "ab ps", "abps", "baps", "ba ps",
+            "communication", "comm",
+            "bael", "abel", "english language",
         ]
     )
-    if has_year_only and has_prog_only:
+
+    if has_year_hint and has_prog_hint:
         return "curriculum"
+        
+    if any(w in tlow for w in ["subject", "subjects", "course", "courses", "curriculum", "prospectus", "study plan"]):
+        if has_prog_hint:
+             return "curriculum"
 
     return "courseinfo"
 
-
 def _extract_year(text: str) -> Optional[int]:
     tl = (text or "").lower()
-    for k, v in YEAR_WORDS.items():
+    
+    m_strict = re.search(r"\b(1st|2nd|3rd|4th|1|2|3|4)\s+(?:year|yr)\b", tl)
+    if m_strict:
+        val = m_strict.group(1)
+        if val in ["1", "1st"]: return 1
+        if val in ["2", "2nd"]: return 2
+        if val in ["3", "3rd"]: return 3
+        if val in ["4", "4th"]: return 4
+
+    for k, v in YEAR_MAP_STRICT.items():
         if k in tl:
             return v
+    
+    m_loose = re.search(r"\b(?:year|yr)\s*(\d)\b", tl)
+    if m_loose:
+        return int(m_loose.group(1))
 
-    m = re.search(r"\b(?:year|yr)\s*(\d)\b", tl)
-    if m:
-        return int(m.group(1))
-
-    m2 = re.search(r"\b(1st|2nd|3rd|4th)\s+year\b", tl)
-    if m2:
-        return int(m2.group(1)[0])
-
+    
     return None
-
 
 def _extract_term(text: str) -> Optional[int]:
     tl = (text or "").lower()
@@ -338,7 +301,6 @@ def _extract_term(text: str) -> Optional[int]:
     if re.search(r"\b(3rd|third)\s+(sem|sem\.|semester|trimester|term)\b", tl):
         return 3
     return None
-
 
 def extract_entities(text: str) -> Dict[str, Optional[str]]:
     doc = nlp(text or "")

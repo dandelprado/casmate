@@ -24,6 +24,7 @@ from data_api import (
     department_lookup,
     get_dept_role_label,
     get_cas_dean,
+    _clean_course_query
 )
 from nlu_rules import (
     build_gazetteers,
@@ -278,7 +279,7 @@ def _build_nstp_overview() -> str:
     nstp2 = find_course_by_code(courses, "NSTP 2")
 
     lines: list[str] = [
-        "The National Service Training Program (NSTP) at NWU has two components:"
+        "The National Service Training Program (NSTP) has two parts:"
     ]
 
     if nstp1:
@@ -301,6 +302,8 @@ def _build_nstp_overview() -> str:
             )
     else:
         lines.append("• NSTP 2 – prerequisite: NSTP 1.")
+    
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -331,7 +334,7 @@ def _build_pathfit_overview() -> str:
             pathfit_courses.append(c)
 
     if not pathfit_courses:
-        return "There are no PATHFIT courses listed in the current CAS curriculum data."
+        return "I couldn't find any PATHFIT courses listed right now."
 
     def _pathfit_key(c: dict) -> int:
         code = (c.get("course_code") or c.get("course_id") or "").strip().upper()
@@ -342,7 +345,7 @@ def _build_pathfit_overview() -> str:
         return 0
 
     pathfit_courses = sorted(pathfit_courses, key=_pathfit_key)
-    lines: list[str] = ["The PATHFIT (Physical Fitness) subjects are sequential:"]
+    lines: list[str] = ["The PATHFIT (Physical Fitness) subjects are taken in sequence:"]
 
     for c in pathfit_courses:
         name_code = format_course_name_then_code(c)
@@ -354,6 +357,8 @@ def _build_pathfit_overview() -> str:
         else:
             prereq_list = ", ".join(format_course_name_then_code(p) for p in needed)
             lines.append(f"• {name_code} – prerequisites: {prereq_list}.")
+    
+
     return "\n".join(lines)
 
 
@@ -373,7 +378,7 @@ def _build_thesis_overview() -> str:
             thesis_courses_by_code[code] = c
 
     if not thesis_courses_by_code:
-        return "There are no thesis or thesis-related research courses listed in the current CAS curriculum data."
+        return "I couldn't find any thesis or research courses listed in the data right now."
 
     thesis_codes = set(thesis_courses_by_code.keys())
     course_programs: dict[str, set[str]] = {}
@@ -385,8 +390,8 @@ def _build_thesis_overview() -> str:
             course_programs.setdefault(cid, set()).add(pid)
 
     lines: list[str] = [
-        "Here are thesis and thesis-related research courses across CAS, "
-        "grouped by program, with their prerequisites if any:"
+        "Here are the thesis and research courses across CAS, "
+        "grouped by program, with their prerequisites:"
     ]
 
     def _sorted_thesis_for_program(pid: str) -> list[dict]:
@@ -413,7 +418,7 @@ def _build_thesis_overview() -> str:
         if not thesis_for_prog: continue
         any_output = True
         lines.append("")
-        lines.append(f"For {pname}, the thesis and thesis-related research courses are:")
+        lines.append(f"For {pname}, the thesis courses are:")
         for c in thesis_for_prog:
             name_code = format_course_name_then_code(c)
             needed = get_prerequisites(prereqs, courses, c.get("course_id"))
@@ -428,7 +433,7 @@ def _build_thesis_overview() -> str:
     leftover = [c for code, c in thesis_courses_by_code.items() if code not in course_programs]
     if leftover:
         lines.append("")
-        lines.append("The following thesis or thesis-related courses are listed but not mapped to a specific CAS program in the current plan:")
+        lines.append("These thesis courses are listed but not mapped to a specific CAS program in the current plan:")
         for c in leftover:
             name_code = format_course_name_then_code(c)
             needed = get_prerequisites(prereqs, courses, c.get("course_id"))
@@ -441,7 +446,9 @@ def _build_thesis_overview() -> str:
                 lines.append(f"• {name_code} – prerequisites: {prereq_list}.")
 
     if not any_output:
-        return "There are thesis and thesis-related research courses in the data, but they are not currently mapped to any CAS program in the curriculum plan."
+        return "I see thesis courses in the data, but they aren't currently mapped to any CAS program in my records."
+    
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -459,7 +466,7 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
         if ents.get("course_code"):
             course, _ = find_course_any(data, ents["course_code"])
             if not course:
-                 return f"I noticed you mentioned '{ents['course_code']}', but I can't find a course with that code. Could you double-check the spelling for me?"
+                 return f"I see you mentioned '{ents['course_code']}', but I can't find a course with that code. Could you check the spelling?"
 
         if not course and ents.get("course_title"):
             fb = fuzzy_best_course_title(courses, ents["course_title"], score_cutoff=70)
@@ -470,7 +477,7 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
 
     if not course:
         return (
-            "I’m not sure which course you’re referring to just yet. "
+            "I'm not totally sure which course you mean yet. "
             "Could you give me the full course title or code? For example:\n"
             "• Prerequisite of Microbiology (BIO 103 L/L)\n"
             "• What are the prereqs for Purposive Communication (PCOM)?"
@@ -481,17 +488,15 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
     if course_code == "IENG":
         return (
             "English Review (IENG) is a diagnostic-placement subject based on your "
-            "English diagnostic test results. Please inquire with the Guidance Office "
-            "via their Facebook page https://www.facebook.com/NWUGuidance to confirm "
-            "whether you need to take it."
+            "English diagnostic test results. Please check with the Guidance Office "
+            "via their Facebook page https://www.facebook.com/NWUGuidance to confirm if you need it."
         )
 
     if course_code == "IMAT":
         return (
             "Math Review (IMAT) is a diagnostic-placement subject based on your "
-            "Math diagnostic test results. Please inquire with the Guidance Office "
-            "via their Facebook page https://www.facebook.com/NWUGuidance to confirm "
-            "whether you need to take it."
+            "Math diagnostic test results. Please check with the Guidance Office "
+            "via their Facebook page https://www.facebook.com/NWUGuidance to confirm if you need it."
         )
 
     needed = get_prerequisites(prereqs, courses, course.get("course_id"))
@@ -499,14 +504,15 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
     
     is_yes_no = any(user_text.lower().strip().startswith(x) for x in ["does", "do", "is", "are", "can", "could"])
 
+    lines = []
     if not needed:
         prefix = "No, " if is_yes_no else ""
-        return f"{prefix}{heading} has no listed prerequisites."
-
-    if is_yes_no:
-        lines = [f"Yes, the prerequisite for {heading} is:"] if len(needed) == 1 else [f"Yes, the prerequisites for {heading} are:"]
+        lines.append(f"{prefix}{heading} has no listed prerequisites.")
     else:
-        lines = [f"Prerequisite of {heading}:"] if len(needed) == 1 else [f"Prerequisites of {heading}:"]
+        if is_yes_no:
+            lines.append(f"Yes, the prerequisite for {heading} is:" if len(needed) == 1 else f"Yes, the prerequisites for {heading} are:")
+        else:
+            lines.append(f"Prerequisite of {heading}:" if len(needed) == 1 else f"Prerequisites of {heading}:")
 
     has_diagnostic = False
     diag_codes = set()
@@ -532,8 +538,9 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
             lines.append("Note: Math Review (IMAT) depends on your Math diagnostic test results.")
         else:
             lines.append("Note: English Review (IENG) and Math Review (IMAT) depend on your diagnostic test results.")
-        lines.append("Please inquire with the Guidance Office via their Facebook page https://www.facebook.com/NWUGuidance.")
-
+        lines.append("You can check with the Guidance Office via their Facebook page https://www.facebook.com/NWUGuidance.")
+    
+    lines.append(f"")
     return "\n".join(lines)
 
 
@@ -570,7 +577,7 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
         has_number = bool(re.search(r"\d", user_text))
         if has_number or not ents.get("program"):
              u_str = _format_units(course_candidate.get('units', 'NA'))
-             return f"{format_course(course_candidate)} — {u_str}."
+             return f"{format_course(course_candidate)} — {u_str}. "
 
     prog_row = None
     if ents.get("program"):
@@ -594,8 +601,8 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
             has_entries = any((entry.get("program_id") == pid) for entry in plan)
             if not has_entries and "english language" in pname_lower:
                 return (
-                    "The detailed unit loading for BA in English Language isn’t loaded in this system yet.\n\n"
-                    "For accurate and up-to-date information, please check directly with the Department of Language and Literature. "
+                    "The detailed unit loading for BA in English Language isn’t loaded in my system yet.\n\n"
+                    "For accurate info, please check directly with the Department of Language and Literature. "
                     "You can start with the department head, DR. JV."
                 )
 
@@ -610,7 +617,7 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
             
             year_values = sorted(year_values)
             if not year_values:
-                return f"I couldn't find unit data for {pname} in the current curriculum plan."
+                return f"I couldn't find unit data for {pname} in the curriculum plan."
 
             lines: list[str] = [f"Total units for {pname} by year (excluding diagnostic review subjects):"]
             overall_total = 0
@@ -631,7 +638,7 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
                 overall_total += total_y
 
             if overall_total == 0:
-                return f"I couldn't find unit data for {pname} in the current curriculum plan."
+                return f"I couldn't find unit data for {pname} in the curriculum plan."
 
             lines.append("")
             overall_line = "Overall total for the full program"
@@ -641,6 +648,8 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
 
             if any_diag_across:
                 lines.append("Note: Diagnostic review subjects like IMAT (Math Review) and IENG (English Review) are not included here.")
+            
+            lines.append(f"")
             return "\n".join(lines)
 
         total_units, by_sem, diagnostic_by_sem = units_by_program_year_with_exclusions(plan, courses, pid, year)
@@ -648,12 +657,12 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
 
         if not by_sem and "english language" in pname_lower:
             return (
-                "The detailed unit loading for BA in English Language isn’t loaded in this system yet.\n\n"
+                "The detailed unit loading for BA in English Language isn’t loaded yet.\n\n"
                 "Please check directly with the Department of Language and Literature."
             )
 
         if not by_sem:
-            return f"I couldn't find unit data for {year_label} {pname} in the current curriculum plan."
+            return f"I couldn't find unit data for {year_label} {pname} in the curriculum plan."
 
         term = ents.get("term_num")
         lines: list[str] = []
@@ -670,6 +679,8 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
             lines.append(f"• {sem_label}: {units_for_term} units")
             if has_diag:
                 lines.append("Note: Diagnostic review subjects like IMAT (Math Review) and IENG (English Review) are not included.")
+            
+            lines.append(f"")
             return "\n".join(lines)
 
         any_diag = any(diagnostic_by_sem.values())
@@ -683,13 +694,15 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
         lines.append(f"\n{overall_line}")
         if any_diag:
             lines.append("Note: Diagnostic review subjects are not included.")
+        
+        lines.append(f"")
         return "\n".join(lines)
 
     if not course_candidate and meaningful:
         course_candidate, _ = find_course_any(data, user_text)
         if course_candidate:
             u_str = _format_units(course_candidate.get('units', 'NA'))
-            return f"{format_course(course_candidate)} — {u_str}."
+            return f"{format_course(course_candidate)} — {u_str}. "
 
     return (
         "I'd be happy to check the units for you! To give you the right number, "
@@ -735,7 +748,7 @@ def handle_curriculum(user_text: str, ents: dict) -> str:
 
     if any(x in (user_text or "").lower() for x in ["bael", "abel", "ab english language", "ba english language", "ab english", "ba english", "english language"]):
         return (
-            "The detailed curriculum plan for BA in English Language isn’t loaded in this system yet.\n\n"
+            "The detailed curriculum plan for BA in English Language isn’t loaded in my system yet.\n\n"
             "For now, it’s best to check directly with the Department of Language and Literature."
         )
 
@@ -763,7 +776,7 @@ def handle_curriculum(user_text: str, ents: dict) -> str:
     pname = prog_row["program_name"]
     has_entries = any((entry.get("program_id") == pid) for entry in plan)
     if not has_entries:
-        return f"The detailed curriculum plan for {pname} isn’t available in this system yet."
+        return f"The detailed curriculum plan for {pname} isn’t available in my system yet."
 
     year = ents.get("year_num")
     term = ents.get("term_num")
@@ -778,11 +791,16 @@ def handle_curriculum(user_text: str, ents: dict) -> str:
 
     year_labels = {1: "First year", 2: "Second year", 3: "Third year", 4: "Fourth year"}
     year_label = year_labels.get(year, f"Year {year}")
+    
+    year_exists = any((entry.get("program_id") == pid and int(entry.get("year_level", 0)) == year) for entry in plan)
+    if not year_exists:
+         return f"I couldn’t find any curriculum entries for {year_label} (Year {year}) in {pname}. The current data might only cover up to Year 3."
 
     if term:
         term_courses = courses_for_plan(plan, courses, pid, year, term)
         if not term_courses:
             return f"I couldn’t find any curriculum entries for {year_label} {pname}, {_term_label(term)}."
+        
         lines: list[str] = [f"Courses for {year_label} {pname}, {_term_label(term)}:"]
         diag_codes: set[str] = set()
         for c in term_courses:
@@ -791,6 +809,8 @@ def handle_curriculum(user_text: str, ents: dict) -> str:
             lines.append(f"• {format_course_name_then_code(c)}")
         if diag_codes:
             lines.append("\nNote: English Review (IENG) and Math Review (IMAT) depend on your diagnostic test results.")
+        
+        lines.append(f"")
         return "\n".join(lines)
 
     lines = [f"Courses for {year_label} {pname}:"]
@@ -807,9 +827,11 @@ def handle_curriculum(user_text: str, ents: dict) -> str:
             if code in {"IMAT", "IENG"}: diag_codes.add(code)
             lines.append(f"• {format_course_name_then_code(c)}")
     if not any_term:
-        return f"I couldn’t find any curriculum entries for {year_label} {pname} in the current data."
+        return f"I couldn’t find any curriculum entries for {year_label} {pname} in the current data. It might not be loaded yet."
     if diag_codes:
         lines.append("\nNote: English Review (IENG) and Math Review (IMAT) depend on your diagnostic test results.")
+    
+    lines.append(f"")
     return "\n".join(lines)
 
 
@@ -824,6 +846,7 @@ def handle_dept_heads_list_or_clarify(user_text: str, ents: dict) -> str:
         lines = ["Department heads (including Dean):"]
         for r in rows:
             lines.append(f"- {_format_head_row(r)}")
+        lines.append("")
         return "\n".join(lines)
     st.session_state.awaiting_college_scope = True
     st.session_state.pending_intent = "dept_heads_college"
@@ -837,13 +860,18 @@ def handle_dept_head_one(user_text: str, ents: dict) -> str:
         if college == "CAS" or (college is None):
             dean_row = get_cas_dean(data["departments"])
             if dean_row and dean_row.get("department_head"):
-                return f"The dean is {dean_row.get('department_head')}."
+                return (
+                    f"The current CAS Dean is {dean_row.get('department_head')}.\n\n"
+                    "For information about other colleges, please check with their respective offices. "
+                )
             return "No dean is recorded."
         if college and college != "CAS":
             return _refer_university()
+        
         st.session_state.awaiting_college_scope = True
         st.session_state.pending_intent = "ask_dean_college"
         return "Which college dean are you referring to? CAS, or another college?"
+
     dep_name = ents.get("department") or user_text
     drow = department_lookup(data["departments"], dep_name)
     if not drow:
@@ -856,7 +884,7 @@ def handle_dept_head_one(user_text: str, ents: dict) -> str:
     role = get_dept_role_label(drow, user_text)
     if not head:
         return f"No {role.lower()} is recorded for {drow.get('department_name')}."
-    return f"The {role.lower()} is {head}."
+    return f"The {role.lower()} is {head}. "
 
 
 def resolve_pending(user_text: str) -> Optional[str]:
@@ -870,6 +898,7 @@ def resolve_pending(user_text: str) -> Optional[str]:
             lines = ["Department heads (including Dean):"]
             for r in rows:
                 lines.append(f"- {_format_head_row(r)}")
+            lines.append("")
             return "\n".join(lines)
         head = get_department_head_by_name(data["departments"], user_text)
         if head:
@@ -894,6 +923,7 @@ def resolve_pending(user_text: str) -> Optional[str]:
                 lines = ["Department heads (including Dean):"]
                 for r in rows:
                     lines.append(f"- {_format_head_row(r)}")
+                lines.append("")
                 return "\n".join(lines)
         if college and college != "CAS":
             return _refer_university()
@@ -908,10 +938,41 @@ def route(user_text: str) -> str:
 
     if _looks_like_payment(user_text):
         return _refer_university(channel_hint="finance")
-
-    intent = detect_intent(user_text)
-    ents = extract_entities(user_text)
+    
     tlow = (user_text or "").lower().strip().rstrip("?!.")
+    ents = extract_entities(user_text)
+    intent = detect_intent(user_text)
+
+    has_units = bool(re.search(r"\b(unit|units|credit|load)\b", user_text.lower()))
+    has_prereq = bool(re.search(r"\b(prereq|prerequisites?|requirements?)\b", user_text.lower()))
+    
+    c, match_type = find_course_any(data, user_text)
+    
+    if c and match_type in ("code", "exact_title", "exact_title_subset", "alias"):
+        if has_units: return handle_units(user_text, ents, course_obj=c)
+        if has_prereq: return handle_prereq(user_text, ents, course_obj=c)
+        return (
+            f"I found **{format_course(c)}**.\n\n"
+            "What would you like to know about it? I can check its **units**, **prerequisites**, "
+            "or verify if it's in your curriculum. "
+        )
+    
+    if c and match_type == "fuzzy_code":
+         return (
+            f"I found a possible match: **{format_course(c)}**.\n\n"
+            "Is this the course you're looking for? "
+            "If yes, I can provide its **units** or **prerequisites**."
+        )
+         
+    cleaned_q = _clean_course_query(user_text)
+    words = cleaned_q.split()
+    
+    is_code = bool(CODE_RE.search(user_text)) or (len(words) == 1 and any(char.isdigit() for char in words[0]))
+
+    if len(words) <= 1 and not is_code and not any(w in tlow for w in ["who", "what", "where", "when", "why", "how", "list", "show"]):
+         if cleaned_q in GREETINGS:
+             return "Hello! How can I help you today?"
+         return "I'm not sure what you're asking about. Could you be more specific? (e.g., 'BS Psychology subjects', 'Intro to Psychology units')"
 
     if "curriculum" in tlow:
         return handle_curriculum(user_text, ents)
@@ -939,33 +1000,8 @@ def route(user_text: str) -> str:
         if intent == "units": return handle_units(user_text, ents)
         if intent == "curriculum" or intent == "courseinfo": 
             if intent == "curriculum": return handle_curriculum(user_text, ents)
-            if intent == "courseinfo" and (ents.get("year_num") or ents.get("term_num")): return handle_curriculum(user_text, ents)
-
-    if (intent == "courseinfo" and ents.get("program") and not ents.get("course_code") and not ents.get("course_title") and not bool(CODE_RE.search(user_text))):
-        pass 
-
-    
-    has_units = bool(re.search(r"\b(unit|units|credit|load)\b", user_text.lower()))
-    has_prereq = bool(re.search(r"\b(prereq|prerequisites?|requirements?)\b", user_text.lower()))
-    
-    c, match_type = find_course_any(data, user_text)
-    
-    if c and match_type in ("code", "alias", "exact_title"):
-        if has_units: return handle_units(user_text, ents, course_obj=c)
-        if has_prereq: return handle_prereq(user_text, ents, course_obj=c)
-        
-        return (
-            f"I found **{format_course(c)}**.\n\n"
-            "What would you like to know about it? I can check its **units**, **prerequisites**, "
-            "or verify if it's in your curriculum."
-        )
-    
-    if c and match_type == "fuzzy_code":
-         return (
-            f"I found a possible match: **{format_course(c)}**.\n\n"
-            "Is this the course you're looking for? "
-            "If yes, I can provide its **units** or **prerequisites**."
-        )
+            if intent == "courseinfo" and (ents.get("year_num") or ents.get("term_num")): 
+                return handle_curriculum(user_text, ents)
 
     raw_hits = fuzzy_top_course_titles(data["courses"], user_text, limit=30, score_cutoff=65)
     
@@ -987,49 +1023,49 @@ def route(user_text: str) -> str:
         
         top_name, top_score, top_course = hits[0]
         
+        is_perfect = (top_score >= 97) or (top_name.lower().strip() == user_text.lower().strip().replace("?", "").replace("subject", "").replace("prereq", "").strip())
+        
         is_ambiguous = False
         if len(hits) > 1:
             second_score = hits[1][1]
-            if (top_score - second_score) < 15:
-                is_ambiguous = True
+            if top_score >= 85 and second_score >= 85:
+                if (top_score - second_score) < 15:
+                    is_ambiguous = True
+                if len(user_text.split()) == 1 and top_score > 90 and second_score > 90:
+                    is_ambiguous = True
 
-        if top_score >= 92:
-             if is_ambiguous and (top_score - second_score) < 5:
-                 pass
-             else:
-                 c = top_course
-                 if has_units: return handle_units(user_text, ents, course_obj=c)
-                 if has_prereq: return handle_prereq(user_text, ents, course_obj=c)
-                 return (
-                    f"I found **{format_course(c)}**.\n\n"
-                    "What would you like to know about it? I can check its **units**, **prerequisites**, "
-                    "or verify if it's in your curriculum."
-                )
-
-        if is_ambiguous or top_score < 88:
-            lines = ["I found multiple courses that might match. Which one are you interested in?"]
+        if is_ambiguous:
+            lines = ["I found a few courses that look similar. Which one did you mean?"]
             for i in range(min(len(hits), 6)):
                 match_c = hits[i][2]
                 lines.append(f"• **{format_course(match_c)}**")
             return "\n".join(lines)
 
-        c = top_course
-        if has_units: return handle_units(user_text, ents, course_obj=c)
-        if has_prereq: return handle_prereq(user_text, ents, course_obj=c)
-        return (
-            f"I found a possible match: **{format_course(c)}**.\n\n"
-            "Is this the course you're looking for? "
-            "If yes, I can provide its **units** or **prerequisites**."
-        )
+        if top_score >= 92 or is_perfect:
+             c = top_course
+             if has_units: return handle_units(user_text, ents, course_obj=c)
+             if has_prereq: return handle_prereq(user_text, ents, course_obj=c)
+             return (
+                f"I found **{format_course(c)}**.\n\n"
+                "What would you like to know about it? I can check its **units**, **prerequisites**, "
+                "or verify if it's in your curriculum. "
+            )
+
+        if top_score >= 65:
+            lines = ["I found a few courses that look similar. Which one did you mean?"]
+            for i in range(min(len(hits), 6)):
+                match_c = hits[i][2]
+                lines.append(f"• **{format_course(match_c)}**")
+            return "\n".join(lines)
 
     if intent == "units": return handle_units(user_text, ents)
     if intent == "prerequisites": return handle_prereq(user_text, ents)
 
     if ents.get("program"):
-         return "I'm not sure which part of that program you need. Could you specify subjects or prerequisites?"
+         return "I'm not totally sure which part of that program you need. Could you specify subjects or prerequisites?"
 
     return (
-        "I'm not completely sure what you need yet based on that message.\n\n"
+        "I'm not totally sure what you need yet based on that message.\n\n"
         "Could you rephrase it with more detail? For example:\n"
         "• BS Biology subjects?\n"
         "• Prerequisite of Purposive Communication?"
