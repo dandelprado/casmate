@@ -235,7 +235,7 @@ def detect_intent(text: str) -> str:
     if "INTENT_PREREQ" in labels or "prereq" in tlow or "prerequisite" in tlow:
         return "prerequisites"
 
-    if "INTENT_UNITS" in labels or "units" in tlow:
+    if "INTENT_UNITS" in labels or re.search(r"\bunits?\b", tlow):
         return "units"
 
     if any(w in tlow for w in ["subject", "subjects", "course", "courses", "curriculum"]):

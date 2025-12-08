@@ -10,7 +10,11 @@ def getchatbubblehtml(sender, message, source=None, user_name=None):
         label = user_name
     else:
         label = sender
+    
     safe_message = html.escape(str(message))
+    
+    safe_message = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', safe_message)
+
     url_pattern = r'(https?://[^\s]+)'
     safe_message = re.sub(
         url_pattern,
@@ -18,6 +22,7 @@ def getchatbubblehtml(sender, message, source=None, user_name=None):
         safe_message
     )
     safe_message = safe_message.replace('\n', '<br>')
+    
     if is_casmate:
         bubble_style = """
             background: #1e3a5f;
@@ -47,11 +52,13 @@ def getchatbubblehtml(sender, message, source=None, user_name=None):
             border: 1px solid #6366f1;
         """
         label_style = "font-weight: 600; margin-bottom: 8px; font-size: 13px; color: #c084fc;"
+    
     content_style = "font-size: 14px; line-height: 1.65;"
     src_html = ''
     if source and str(source).strip():
         safe_source = html.escape(str(source).strip())
         src_html = f'<div style="margin-top:10px; font-size:12px; opacity:0.7;">Source: {safe_source}</div>'
+    
     return f"""
     <div style="{bubble_style}">
       <div style="{label_style}">{label}</div>
@@ -68,4 +75,3 @@ def getfooterhtml():
         CASmate &copy; 2025 | Northwestern University CAS
     </div>
     """
-

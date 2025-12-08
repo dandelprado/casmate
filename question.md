@@ -58,3 +58,8 @@ Check CC 123 prerequisites
 # Findings
 
 1. Finding 1 fixed
+
+# Issue 
+
+is there a prereq for subjects
+

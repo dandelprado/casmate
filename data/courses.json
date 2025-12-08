@@ -1136,14 +1136,6 @@
     "remarks": "Prerequisite: MATH 131."
   },
   {
-    "course_code": "IMML",
-    "course_title": "Multimedia Lab",
-    "credit_units": "1",
-    "lecture_hours_per_week": "",
-    "laboratory_hours_per_week": "4 hours",
-    "remarks": ""
-  },
-  {
     "course_code": "CS 221",
     "course_title": "Principles of Programming Languages",
     "credit_units": "3",
