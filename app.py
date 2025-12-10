@@ -98,7 +98,7 @@ def render_message(sender, message, source=None):
 
 
 if not st.session_state.did_intro_prompt:
-    st.session_state.chat.append({"sender": "CASmate", "message": "Hello! I'm CASmate. What's your name?"})
+    st.session_state.chat.append({"sender": "CASmate", "message": "Hey there! I'm CASmate. What should I call you?"})
     st.session_state.did_intro_prompt = True
 
 for msg in st.session_state.chat:
@@ -218,8 +218,8 @@ def _detect_college(text: str) -> Optional[str]:
 
 def _refer_university(channel_hint: Optional[str] = None) -> str:
     if channel_hint == "finance":
-        return "For payment-related inquiries, please contact the University Finance office through its official channel."
-    return "For colleges outside CAS, please reach out through the University's official channel."
+        return "For payments and fees, you should definitely check with the University Finance Office. You can message them here: https://www.facebook.com/NWUFinance"
+    return "For colleges outside CAS, please reach out through the University's official channel: https://www.facebook.com/NWUofficial"
 
 
 def format_course_name_then_code(c: dict) -> str:
@@ -482,7 +482,7 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
         if ents.get("course_code"):
             course, _ = find_course_any(data, ents["course_code"])
             if not course:
-                 return (f"I see you mentioned '{ents['course_code']}', but I can't find a course with that code. Could you check the spelling?", None)
+                 return (f"I see you mentioned '{ents['course_code']}', but I can't find a course with that code. Mind checking the spelling?", None)
 
         if not course and ents.get("course_title"):
             fb = fuzzy_best_course_title(courses, ents["course_title"], score_cutoff=70)
@@ -494,9 +494,9 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
     if not course:
         return (
             "I'm not totally sure which course you mean yet. "
-            "Could you give me the full course title or code? For example:\n"
-            "• Prerequisite of Microbiology (BIO 103 L/L)\n"
-            "• What are the prereqs for Purposive Communication (PCOM)?",
+            "Could you give me the full course title or code? For example, "
+            "Prerequisite of Microbiology (BIO 103 L/L) or "
+            "prereqs for Purposive Communication (PCOM).",
             None
         )
 
@@ -505,7 +505,7 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
     if course_code == "IENG":
         return (
             "English Review (IENG) is a diagnostic-placement subject based on your "
-            "English diagnostic test results. Please check with the Guidance Office "
+            "English diagnostic test results. You should check with the Guidance Office "
             "via their Facebook page https://www.facebook.com/NWUGuidance to confirm if you need it.",
             None
         )
@@ -513,7 +513,7 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
     if course_code == "IMAT":
         return (
             "Math Review (IMAT) is a diagnostic-placement subject based on your "
-            "Math diagnostic test results. Please check with the Guidance Office "
+            "Math diagnostic test results. You should check with the Guidance Office "
             "via their Facebook page https://www.facebook.com/NWUGuidance to confirm if you need it.",
             None
         )
@@ -552,11 +552,11 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
     if has_diagnostic:
         lines.append("")
         if diag_codes == {"IENG"}:
-            lines.append("Note: English Review (IENG) depends on your English diagnostic test results.")
+            lines.append("Just so you know: English Review (IENG) depends on your English diagnostic test results.")
         elif diag_codes == {"IMAT"}:
-            lines.append("Note: Math Review (IMAT) depends on your Math diagnostic test results.")
+            lines.append("Just so you know: Math Review (IMAT) depends on your Math diagnostic test results.")
         else:
-            lines.append("Note: English Review (IENG) and Math Review (IMAT) depend on your diagnostic test results.")
+            lines.append("Just so you know: English Review (IENG) and Math Review (IMAT) depend on your diagnostic test results.")
         lines.append("You can check with the Guidance Office via their Facebook page https://www.facebook.com/NWUGuidance.")
     
     lines.append(f"")
@@ -605,7 +605,7 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
         if c_code == "IENG":
             is_explicit = any(k in tlow for k in ["review", "ieng", "diagnostic", "placement"])
             if not is_explicit and "english" in tlow:
-                 return ("I'm not sure what you're asking about. Could you be more specific? (e.g., 'BS Psychology subjects', 'Intro to Psychology units')", None)
+                 return ("I'm a bit lost. Could you tell me exactly what you need in one sentence? Mention the course code or program and whether you need units, prerequisites, or the curriculum.", None)
 
     if course_candidate:
         has_number = bool(re.search(r"\d", user_text))
@@ -681,10 +681,17 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
             lines.append(overall_line)
 
             if any_diag_across:
-                lines.append("Note: Diagnostic review subjects like IMAT (Math Review) and IENG (English Review) are not included here.")
+                lines.append("Note: Diagnostic review subjects like IMAT (Math Review) and IENG (English Review) are not included here. You can check with the Guidance Office via their Facebook page https://www.facebook.com/NWUGuidance.")
             
             lines.append(f"")
             return ("\n".join(lines), OFFICIAL_SOURCE)
+
+        if year > 3:
+            return (
+                f"Just a heads-up: CAS programs are typically 3-year trimester courses. My data only covers up to Year 3. "
+                "You might want to check with your department or the Registrar if you're looking for 4th-year subjects.",
+                None
+            )
 
         total_units, by_sem, diagnostic_by_sem = units_by_program_year_with_exclusions(plan, courses, pid, year)
         year_label = year_labels.get(year, f"Year {year}")
@@ -706,7 +713,7 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
             lines.append(header)
             lines.append(f"• {sem_label}: {units_for_term} units")
             if has_diag:
-                lines.append("Note: Diagnostic review subjects like IMAT (Math Review) and IENG (English Review) are not included.")
+                lines.append("Note: Diagnostic review subjects like IMAT (Math Review) and IENG (English Review) are not included. You can check with the Guidance Office via their Facebook page https://www.facebook.com/NWUGuidance.")
             
             lines.append(f"")
             return ("\n".join(lines), OFFICIAL_SOURCE)
@@ -721,7 +728,7 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
         overall_line = "Overall total" + (" (excluding IMAT/IENG)" if any_diag else "") + f": {total_units} units"
         lines.append(f"\n{overall_line}")
         if any_diag:
-            lines.append("Note: Diagnostic review subjects are not included.")
+            lines.append("Note: Diagnostic review subjects are not included. You can check with the Guidance Office via their Facebook page https://www.facebook.com/NWUGuidance.")
         
         lines.append(f"")
         return ("\n".join(lines), OFFICIAL_SOURCE)
@@ -734,11 +741,7 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
 
     return (
         "I'm not quite sure which program you mean.\n\n"
-        "Some examples I can help with are:\n"
-        "• BS Computer Science\n"
-        "• BS Psychology\n"
-        "• BA Communication\n"
-        "• BA Political Science\n\n"
+        "Some examples I can help with are BS Computer Science, BS Psychology, or BA Communication.\n\n"
         "Which program are you interested in?",
         None
     )
@@ -802,11 +805,7 @@ def handle_curriculum(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
     if not prog_row:
         return (
             "I'm not quite sure which program you mean.\n\n"
-            "Some examples I can help with are:\n"
-            "• BS Computer Science\n"
-            "• BS Psychology\n"
-            "• BA Communication\n"
-            "• BA Political Science\n\n"
+            "Some examples I can help with are BS Computer Science, BS Psychology, or BA Communication.\n\n"
             "Which program are you interested in?",
             None
         )
@@ -828,12 +827,18 @@ def handle_curriculum(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
     year = ents.get("year_num")
     term = ents.get("term_num")
 
+    if year and year > 3:
+        return (
+            f"Just a heads-up: CAS programs are typically 3-year trimester courses. My data only covers up to Year 3. "
+            "You might want to check with your department or the Registrar if you're looking for 4th-year subjects.",
+            None
+        )
+
     if not year:
         return (
             f"I can list all the subjects for {pname}, but that would be a very long answer.\n\n"
-            f"To keep it readable, could you tell me which year level you’re looking at? For example:\n"
-            f"• 1st year {pname} subjects?\n"
-            f"• 2nd year {pname} courses?",
+            f"To keep it readable, could you tell me which year level you’re looking at? For example, "
+            f"1st year {pname} subjects or 2nd year {pname} courses.",
             None
         )
 
@@ -856,7 +861,7 @@ def handle_curriculum(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
             if code in {"IMAT", "IENG"}: diag_codes.add(code)
             lines.append(f"• {format_course_name_then_code(c)}")
         if diag_codes:
-            lines.append("\nNote: English Review (IENG) and Math Review (IMAT) depend on your diagnostic test results.")
+            lines.append("\nNote: English Review (IENG) and Math Review (IMAT) depend on your diagnostic test results. You can check with the Guidance Office via their Facebook page https://www.facebook.com/NWUGuidance.")
         
         lines.append(f"")
         return ("\n".join(lines), OFFICIAL_SOURCE)
@@ -877,7 +882,7 @@ def handle_curriculum(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
     if not any_term:
         return (f"I couldn’t find any curriculum entries for {year_label} {pname} in the current data. It might not be loaded yet.", None)
     if diag_codes:
-        lines.append("\nNote: English Review (IENG) and Math Review (IMAT) depend on your diagnostic test results.")
+        lines.append("\nNote: English Review (IENG) and Math Review (IMAT) depend on your diagnostic test results. You can check with the Guidance Office via their Facebook page https://www.facebook.com/NWUGuidance.")
     
     lines.append(f"")
     return ("\n".join(lines), OFFICIAL_SOURCE)
@@ -1007,7 +1012,7 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
         if has_prereq: return handle_prereq(user_text, ents, course_obj=c)
         return (
             f"I found **{format_course(c)}**.\n\n"
-            "What would you like to know about it? I can check its **units**, **prerequisites**, "
+            "What do you need? I can check its **units**, **prerequisites**, "
             "or verify if it's in your curriculum. ",
             None
         )
@@ -1032,8 +1037,8 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
     
     if len(words) <= 1 and not is_code and not strong_intent and not any(w in tlow for w in ["abel", "bael", "who", "what", "where", "when", "why", "how", "list", "show"]):
          if cleaned_q in GREETINGS:
-             return ("Hello! How can I help you today?", None)
-         return ("I'm not sure what you're asking about. Could you be more specific? (e.g., 'BS Psychology subjects', 'Intro to Psychology units')", None)
+             return ("Hey there! How can I help you today?", None)
+         return ("I'm a bit lost. Could you tell me exactly what you need in one sentence? Mention the course code or program and whether you need units, prerequisites, or the curriculum.", None)
 
     if "curriculum" in tlow:
         return handle_curriculum(user_text, ents)
@@ -1096,7 +1101,7 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
                     is_ambiguous = True
 
         if is_ambiguous:
-            lines = ["I found a few courses that look similar. Which one did you mean?"]
+            lines = ["I found a few courses with similar names. Could you type the specific course code or full title you need? Here are the ones I see:"]
             for i in range(min(len(hits), 6)):
                 match_c = hits[i][2]
                 lines.append(f"• **{format_course(match_c)}**")
@@ -1108,7 +1113,7 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
              if has_prereq or intent == "prerequisites": return handle_prereq(user_text, ents, course_obj=c)
              return (
                 f"I found **{format_course(c)}**.\n\n"
-                "What would you like to know about it? I can check its **units**, **prerequisites**, "
+                "What do you need? I can check its **units**, **prerequisites**, "
                 "or verify if it's in your curriculum. ",
                 None
             )
@@ -1128,12 +1133,12 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
                 if has_prereq or intent == "prerequisites": return handle_prereq(user_text, ents, course_obj=c)
                 return (
                     f"I found **{format_course(c)}**.\n\n"
-                    "What would you like to know about it? I can check its **units**, **prerequisites**, "
+                    "What do you need? I can check its **units**, **prerequisites**, "
                     "or verify if it's in your curriculum. ",
                     None
                 )
             
-            lines = ["I found a few courses that look similar. Which one did you mean?"]
+            lines = ["I found a few courses with similar names. Could you type the specific course code or full title you need? Here are the ones I see:"]
             for i in range(min(len(hits), 6)):
                 match_c = hits[i][2]
                 lines.append(f"• **{format_course(match_c)}**")
@@ -1147,9 +1152,8 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
 
     return (
         "I'm not totally sure what you need yet based on that message.\n\n"
-        "Could you rephrase it with more detail? For example:\n"
-        "• BS Biology subjects?\n"
-        "• Prerequisite of Purposive Communication?",
+        "Could you rephrase it with more detail? For example: "
+        "BS Biology subjects or Prerequisite of Purposive Communication.",
         None
     )
 

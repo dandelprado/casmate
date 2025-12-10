@@ -56,7 +56,7 @@ def run_tests():
         {
             "cat": "BugFix",
             "input": "political science 4th year subjects",
-            "should_contain": ["couldn’t find any curriculum entries", "Year 4", "Political Science"],
+            "should_contain": ["3-year trimester", "Registrar"],
             "should_not_contain": ["I found a few courses", "PS 101"],
             "expect_source": False, # No data found
             "desc": "4th Year Missing Data Handling"
@@ -211,7 +211,7 @@ def run_tests():
         {
             "cat": "Edge",
             "input": "Psychology",
-            "should_contain": ["not sure what you're asking about", "Could you be more specific"],
+            "should_contain": ["I'm a bit lost", "tell me exactly what you need"],
             "should_not_contain": ["I found a few courses", "I found **"],
             "expect_source": False,
             "desc": "Ambiguous Search (Psychology)"
@@ -219,7 +219,7 @@ def run_tests():
         {
             "cat": "Edge",
             "input": "Communication?",
-            "should_contain": ["not sure what you're asking about", "Could you be more specific"],
+            "should_contain": ["I'm a bit lost", "tell me exactly what you need"],
             "should_not_contain": ["I found a few courses", "I found **"],
             "expect_source": False,
             "desc": "Ambiguous Search (Communication)"
@@ -227,7 +227,7 @@ def run_tests():
         {
             "cat": "Edge",
             "input": "Community",
-            "should_contain": ["not sure what you're asking about", "more specific"],
+            "should_contain": ["I'm a bit lost", "tell me exactly what you need"],
             "should_not_contain": ["Communication"],
             "expect_source": False,
             "desc": "False Positive Program Match"
@@ -277,7 +277,7 @@ def run_tests():
         {
             "cat": "Vague",
             "input": "english units",
-            "should_contain": ["not sure what you're asking about", "more specific"],
+            "should_contain": ["I'm a bit lost", "tell me exactly what you need"],
             "should_not_contain": ["BA in English Language", "Communication", "Political Science"],
             "expect_source": False,
             "desc": "Vague Query (Generic 'english units') - Expect Clarification"
@@ -374,7 +374,7 @@ def run_tests():
         {
             "cat": "SpecialLogic",
             "input": "prereq of IENG",
-            "should_contain": ["English Review", "diagnostic"],
+            "should_contain": ["English Review", "diagnostic", "Guidance Office"],
             "expect_source": None,
             "desc": "Diagnostic Course Logic (IENG)"
         },
@@ -382,7 +382,7 @@ def run_tests():
         {
             "cat": "SpecialLogic",
             "input": "prereq of IMAT",
-            "should_contain": ["Math Review", "diagnostic"],
+            "should_contain": ["Math Review", "diagnostic", "Guidance Office"],
             "expect_source": None,
             "desc": "Diagnostic Course Logic (IMAT)"
         },
@@ -412,7 +412,7 @@ def run_tests():
         {
             "cat": "Edge-Expanded",
             "input": "5th year cs subjects",
-            "should_contain": ["couldn’t find any curriculum entries", "Year 5"],
+            "should_contain": ["3-year trimester", "Registrar"],
             "expect_source": False,
             "desc": "Year Level Out of Bounds (Year 5)"
         },
@@ -490,4 +490,3 @@ def run_tests():
 
 if __name__ == "__main__":
     run_tests()
-
