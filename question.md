@@ -60,17 +60,3 @@ is there a prereq for subjects
 
 # Issue 
 
-is there a prereq for medical microbiology?
-
-purposive communication units
-mathematics in the modern world units?
-Is there a prereq for medical microbiology?
-is there a prereq for microbiology?
-
-How many units do I take as first year cs student?
-
-Pathfit prerequisite
-
-CS subjects?
-CS courses?
-

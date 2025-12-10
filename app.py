@@ -609,7 +609,9 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
 
     if course_candidate:
         has_number = bool(re.search(r"\d", user_text))
-        if has_number or not ents.get("program"):
+        is_title_match = course_candidate.get("course_title", "").lower() in tlow
+        
+        if course_candidate and (has_number or not ents.get("program") or is_title_match):
              u_str = _format_units(course_candidate.get('units', 'NA'))
              return (f"{format_course(course_candidate)} — {u_str}. ", OFFICIAL_SOURCE)
 
@@ -990,8 +992,13 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
     ents = extract_entities(user_text)
     intent = detect_intent(user_text)
 
-    has_units = bool(re.search(r"\b(unit|units|credit|load)\b", user_text.lower()))
-    has_prereq = bool(re.search(r"\b(prereq|prerequisites?|requirements?)\b", user_text.lower()))
+    has_units = bool(re.search(r"\bunits?\b", user_text.lower())) or \
+                bool(re.search(r"\bunits?\b", tlow)) or \
+                (intent == "units") or \
+                ("units" in tlow)
+
+    has_prereq = bool(re.search(r"\b(prereq|prerequisites?|requirements?)\b", user_text.lower())) or \
+                 (intent == "prerequisites")
     
     c, match_type = find_course_any(data, user_text)
     
@@ -1080,7 +1087,7 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
         is_perfect = (top_score >= 97) or (top_name.lower().strip() == user_text.lower().strip().replace("?", "").replace("subject", "").replace("prereq", "").strip())
         
         is_ambiguous = False
-        if len(hits) > 1:
+        if len(hits) > 1 and not is_perfect:
             second_score = hits[1][1]
             if top_score >= 85 and second_score >= 85:
                 if (top_score - second_score) < 15:
@@ -1097,8 +1104,8 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
 
         if top_score >= 92 or is_perfect:
              c = top_course
-             if has_units: return handle_units(user_text, ents, course_obj=c)
-             if has_prereq: return handle_prereq(user_text, ents, course_obj=c)
+             if has_units or intent == "units": return handle_units(user_text, ents, course_obj=c)
+             if has_prereq or intent == "prerequisites": return handle_prereq(user_text, ents, course_obj=c)
              return (
                 f"I found **{format_course(c)}**.\n\n"
                 "What would you like to know about it? I can check its **units**, **prerequisites**, "
@@ -1117,6 +1124,8 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
             
             if is_clear_winner:
                 c = hits[0][2]
+                if has_units or intent == "units": return handle_units(user_text, ents, course_obj=c)
+                if has_prereq or intent == "prerequisites": return handle_prereq(user_text, ents, course_obj=c)
                 return (
                     f"I found **{format_course(c)}**.\n\n"
                     "What would you like to know about it? I can check its **units**, **prerequisites**, "

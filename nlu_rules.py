@@ -67,7 +67,9 @@ DEPT_ALIASES = [
 ]
 
 YEAR_MAP_STRICT = {
-    "freshman": 1, "sophomore": 2, "junior": 3, "senior": 4
+    "freshman": 1, "sophomore": 2, "junior": 3, "senior": 4,
+    "first": 1, "second": 2, "third": 3, "fourth": 4,
+    "1st": 1, "2nd": 2, "3rd": 3, "4th": 4
 }
 
 def build_gazetteers(
@@ -171,6 +173,7 @@ matcher.add(
         [{"LOWER": "how"}, {"LOWER": "many"}, {"LOWER": "units"}],
         [{"LOWER": "units"}, {"LOWER": {"IN": ["for", "of", "in"]}}],
         [{"LOWER": {"IN": ["total", "sum", "load"]}}, {"LOWER": "units"}],
+        [{"LOWER": "units"}, {"IS_PUNCT": True}],
     ],
 )
 
@@ -277,7 +280,6 @@ def detect_intent(text: str) -> str:
 def _extract_year(text: str) -> Optional[int]:
     tl = (text or "").lower()
     
-    
     m_ordinal = re.search(r"\b(\d+)(?:st|nd|rd|th)?\s+(?:year|yr)\b", tl)
     if m_ordinal:
         return int(m_ordinal.group(1))
@@ -286,7 +288,6 @@ def _extract_year(text: str) -> Optional[int]:
     if m_loose:
         return int(m_loose.group(1))
 
-    
     for k, v in YEAR_MAP_STRICT.items():
         if k in tl:
             return v

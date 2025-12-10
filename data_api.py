@@ -26,6 +26,7 @@ PROGRAM_ABBREV = {
     "BS PSYCH": "Bachelor of Science in Psychology",
     "BSPSYCH": "Bachelor of Science in Psychology",
     "PSYCHOLOGY": "Bachelor of Science in Psychology",
+    "BS PSYCHOLOGY": "Bachelor of Science in Psychology",
     "POLSAY": "Bachelor of Arts in Political Science",
     "POLSCI": "Bachelor of Arts in Political Science",
     "AB POLSCI": "Bachelor of Arts in Political Science",
@@ -88,7 +89,8 @@ COURSE_ALIASES = {
     "automata theory": "Automata Theory and Formal Languages",
     "data structures": "Data Structures and Algorithm",
     "data structure": "Data Structures and Algorithm",
-    "math modern world": "Mathematics in the Modern World"
+    "math modern world": "Mathematics in the Modern World",
+    "mathematics modern world": "Mathematics in the Modern World"
 }
 
 
@@ -110,13 +112,13 @@ def _clean_course_query(text: str) -> str:
     tokens = base.split()
     tokens = [COURSE_TERM_SYNONYMS.get(t, t) for t in tokens]
     remove = {
-        "what", "whats", "what's", "is", "are", "the", "of", "for",
+        "what", "whats", "what's", "is", "are", "the", "of", "for", "in", "on", "to", "and",
         "subject", "course", "subjects", "courses",
         "prereq", "prereqs", "prerequisite", "prerequisites",
         "requirement", "requirements",
-        "in", "about", "regarding", "do", "does", "should",
+        "about", "regarding", "do", "does", "should",
         "need", "take", "before", "prior",
-        "how", "many", "unit", "units", "load", "total", "to", "there"
+        "how", "many", "unit", "units", "load", "total", "there"
     }
     kept = [t for t in tokens if t not in remove and not t.startswith("prereq") and not t.startswith("requirement")]
     return " ".join(kept) if kept else base

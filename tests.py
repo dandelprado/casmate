@@ -47,6 +47,14 @@ def run_tests():
         },
         {
             "cat": "BugFix",
+            "input": "is there a prereq for microbiology?",
+            "should_contain": ["Microbiology", "no listed prerequisites"],
+            "should_not_contain": ["I found a few courses", "Medical Microbiology"],
+            "expect_source": True,
+            "desc": "Exact Match Priority (Is there a prereq...)"
+        },
+        {
+            "cat": "BugFix",
             "input": "political science 4th year subjects",
             "should_contain": ["couldn’t find any curriculum entries", "Year 4", "Political Science"],
             "should_not_contain": ["I found a few courses", "PS 101"],
@@ -60,6 +68,30 @@ def run_tests():
             "should_not_contain": ["First year", "Fundamentals of Political Science"],
             "expect_source": True,
             "desc": "Correct Year Parsing (2nd year != 1st year)"
+        },
+        {
+            "cat": "BugFix",
+            "input": "purposive communication units",
+            "should_contain": ["Purposive Communication", "3 units"],
+            "should_not_contain": ["Total units for"],
+            "expect_source": True,
+            "desc": "PCOM Units vs Program Units"
+        },
+        {
+            "cat": "BugFix",
+            "input": "Mathematics in the Modern World units?",
+            "should_contain": ["Mathematics in the Modern World", "3 units"],
+            "should_not_contain": ["What would you like to know"],
+            "expect_source": True,
+            "desc": "MMW Units check"
+        },
+        {
+            "cat": "BugFix",
+            "input": "How many units do I take as first year cs student?",
+            "should_contain": ["Total units for First year Bachelor of Science in Computer Science"],
+            "should_not_contain": ["Second year", "Third year", "Overall for Year 2"],
+            "expect_source": True,
+            "desc": "Year Specific Unit Load (First Year CS)"
         },
 
         # ==============================================================================
@@ -328,13 +360,13 @@ def run_tests():
             "expect_source": True,
             "desc": "COMM Year 2 Units"
         },
-        # UPDATED TEST 48: Expect Clarification instead of direct answer
+        # UPDATED TEST 48 (WAS 52): Expect Direct Answer instead of clarification
         {
             "cat": "COMM-Expanded",
             "input": "prereq of Advertising Principles",
-            "should_contain": ["I found", "Advertising Principles and Practice", "check its **units**, **prerequisites**"],
-            "expect_source": None, # Clarification usually has no source
-            "desc": "COMM Course Prereq Check (Clarification)"
+            "should_contain": ["Advertising Principles and Practice", "no listed prerequisites"],
+            "expect_source": True, # Direct answer has source
+            "desc": "COMM Course Prereq Check (Direct Match)"
         },
 
         # --- 8.6 SPECIAL LOGIC: DIAGNOSTIC/THESIS/PATHFIT ---
@@ -458,3 +490,4 @@ def run_tests():
 
 if __name__ == "__main__":
     run_tests()
+
