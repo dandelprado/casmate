@@ -158,6 +158,10 @@ matcher.add(
             {"OP": "+"}, 
             {"LOWER": {"IN": ["require", "requirements"]}},
         ],
+        [
+            {"LOWER": {"IN": ["overview", "sequence", "track"]}},
+            {"LOWER": "of"},
+        ],
     ],
 )
 
@@ -273,23 +277,20 @@ def detect_intent(text: str) -> str:
 def _extract_year(text: str) -> Optional[int]:
     tl = (text or "").lower()
     
-    m_strict = re.search(r"\b(1st|2nd|3rd|4th|1|2|3|4)\s+(?:year|yr)\b", tl)
-    if m_strict:
-        val = m_strict.group(1)
-        if val in ["1", "1st"]: return 1
-        if val in ["2", "2nd"]: return 2
-        if val in ["3", "3rd"]: return 3
-        if val in ["4", "4th"]: return 4
-
-    for k, v in YEAR_MAP_STRICT.items():
-        if k in tl:
-            return v
     
-    m_loose = re.search(r"\b(?:year|yr)\s*(\d)\b", tl)
+    m_ordinal = re.search(r"\b(\d+)(?:st|nd|rd|th)?\s+(?:year|yr)\b", tl)
+    if m_ordinal:
+        return int(m_ordinal.group(1))
+
+    m_loose = re.search(r"\b(?:year|yr)\s*(\d+)\b", tl)
     if m_loose:
         return int(m_loose.group(1))
 
     
+    for k, v in YEAR_MAP_STRICT.items():
+        if k in tl:
+            return v
+            
     return None
 
 def _extract_term(text: str) -> Optional[int]:

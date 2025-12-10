@@ -264,7 +264,7 @@ def _is_generic_pathfit_query(user_text: str) -> bool:
         "what", "whats", "what's", "is", "are", "the", "a", "an", "of", "for",
         "subject", "course", "subject?", "course?", "prereq", "prereqs",
         "prerequisite", "prerequisites", "requirement", "requirements",
-        "in", "about", "this", "that", "does", "require"
+        "in", "about", "this", "that", "does", "require", "overview"
     }
     others = [tok for tok in tokens if tok not in allowed and tok != "pathfit"]
     return len(others) == 0
@@ -283,7 +283,7 @@ def _is_generic_nstp_query(user_text: str) -> bool:
         "what", "whats", "what's", "is", "are", "the", "a", "an", "of", "for",
         "subject", "course", "subject?", "course?", "prereq", "prereqs",
         "prerequisite", "prerequisites", "requirement", "requirements",
-        "in", "about", "this", "that", "does", "require"
+        "in", "about", "this", "that", "does", "require", "overview"
     }
     others = [tok for tok in tokens if tok not in allowed and tok != "nstp"]
     return len(others) == 0
@@ -335,7 +335,7 @@ def _is_generic_thesis_query(user_text: str) -> bool:
         "what", "whats", "what's", "is", "are", "the", "a", "an", "of", "for",
         "subject", "course", "subject?", "course?", "prereq", "prereqs",
         "prerequisite", "prerequisites", "requirement", "requirements",
-        "in", "about", "this", "that", "does", "require"
+        "in", "about", "this", "that", "does", "require", "overview"
     }
     others = [tok for tok in tokens if tok not in allowed and tok != "thesis"]
     return len(others) == 0
@@ -601,6 +601,13 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
         course_candidate, _ = find_course_any(data, user_text)
 
     if course_candidate:
+        c_code = (course_candidate.get("course_code") or "").upper()
+        if c_code == "IENG":
+            is_explicit = any(k in tlow for k in ["review", "ieng", "diagnostic", "placement"])
+            if not is_explicit and "english" in tlow:
+                 return ("I'm not sure what you're asking about. Could you be more specific? (e.g., 'BS Psychology subjects', 'Intro to Psychology units')", None)
+
+    if course_candidate:
         has_number = bool(re.search(r"\d", user_text))
         if has_number or not ents.get("program"):
              u_str = _format_units(course_candidate.get('units', 'NA'))
@@ -724,8 +731,13 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
             return (f"{format_course(course_candidate)} — {u_str}. ", OFFICIAL_SOURCE)
 
     return (
-        "I'd be happy to check the units for you! To give you the right number, "
-        "could you mention the specific program or course?",
+        "I'm not quite sure which program you mean.\n\n"
+        "Some examples I can help with are:\n"
+        "• BS Computer Science\n"
+        "• BS Psychology\n"
+        "• BA Communication\n"
+        "• BA Political Science\n\n"
+        "Which program are you interested in?",
         None
     )
 
@@ -1006,7 +1018,12 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
     
     is_code = bool(CODE_RE.search(user_text)) or (len(words) == 1 and any(char.isdigit() for char in words[0]))
 
-    if len(words) <= 1 and not is_code and not any(w in tlow for w in ["abel", "bael", "who", "what", "where", "when", "why", "how", "list", "show"]):
+    if _is_generic_thesis_query(user_text) or _is_generic_nstp_query(user_text) or _is_generic_pathfit_query(user_text):
+        return handle_prereq(user_text, ents)
+
+    strong_intent = intent in {"units", "prerequisites", "curriculum"}
+    
+    if len(words) <= 1 and not is_code and not strong_intent and not any(w in tlow for w in ["abel", "bael", "who", "what", "where", "when", "why", "how", "list", "show"]):
          if cleaned_q in GREETINGS:
              return ("Hello! How can I help you today?", None)
          return ("I'm not sure what you're asking about. Could you be more specific? (e.g., 'BS Psychology subjects', 'Intro to Psychology units')", None)
@@ -1090,6 +1107,23 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
             )
 
         if top_score >= 65:
+            is_clear_winner = False
+            if len(hits) == 1:
+                is_clear_winner = True
+            elif len(hits) > 1:
+                diff = hits[0][1] - hits[1][1]
+                if diff >= 15:
+                    is_clear_winner = True
+            
+            if is_clear_winner:
+                c = hits[0][2]
+                return (
+                    f"I found **{format_course(c)}**.\n\n"
+                    "What would you like to know about it? I can check its **units**, **prerequisites**, "
+                    "or verify if it's in your curriculum. ",
+                    None
+                )
+            
             lines = ["I found a few courses that look similar. Which one did you mean?"]
             for i in range(min(len(hits), 6)):
                 match_c = hits[i][2]
