@@ -441,6 +441,26 @@ def get_prerequisites(prereqs: List[Dict], courses: List[Dict], course_id: str) 
         if prereq_course: seen.add(pre_id); needed.append(prereq_course)
     return needed
 
+def get_program_head(programs: List[Dict], departments: List[Dict], query: str) -> Optional[Tuple[str, str]]:
+    res = fuzzy_best_program(programs, query, score_cutoff=70)
+    if not res:
+        return None
+    
+    _, _, p_row = res
+    pid = p_row.get("program_id")
+    pname = p_row.get("program_name")
+    dept_id = p_row.get("department_id")
+
+    if not dept_id:
+        return (pname, None)
+
+    head_name = None
+    for d in departments:
+        if d.get("department_id") == dept_id:
+            head_name = d.get("department_head")
+            break
+    return (pname, head_name)
+
 def courses_for_plan(plan, courses, program_id, year, semester):
     rows = []
     by_id = {c.get("course_id"): c for c in courses if c.get("course_id")}

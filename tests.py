@@ -430,6 +430,71 @@ def run_tests():
             "expect_source": None,
             "desc": "Unknown Program Graceful Fallback"
         },
+        # ==============================================================================
+        # SECTION 9: MAXIMUM UNITS / OVERLOAD LOGIC
+        # ==============================================================================
+        {
+            "cat": "Units-Max",
+            "input": "What is the maximum number of units I can take as a first year CS student?",
+            "should_contain": [
+                "don't have the official maximum number of units",
+                "Bachelor of Science in Computer Science",
+                "What I can show you instead is the usual total units",
+                "check with the department head",
+                "PROF. RC"
+            ],
+            "should_not_contain": ["maximum number of units is 25", "you can take up to"],
+            "expect_source": False,
+            "desc": "Max Units - Computer Science"
+        },
+        {
+            "cat": "Units-Max",
+            "input": "max units for 1st year psych?",
+            "should_contain": [
+                "don't have the official maximum number of units",
+                "Bachelor of Science in Psychology",
+                "check with the department head",
+                "DR. PV"
+            ],
+            "expect_source": False,
+            "desc": "Max Units - Psychology"
+        },
+        {
+            "cat": "Units-Max",
+            "input": "maximum number of units for 2nd year polsci?",
+            "should_contain": [
+                "don't have the official maximum number of units",
+                "Bachelor of Arts in Political Science",
+                "check with the department head",
+                "DR. PV"
+            ],
+            "expect_source": False,
+            "desc": "Max Units - Political Science"
+        },
+        {
+            "cat": "Units-Max",
+            "input": "max units allowed for 3rd year communication?",
+            "should_contain": [
+                "don't have the official maximum number of units",
+                "Bachelor of Arts in Communication",
+                "check with the department head",
+                "DR. JV"
+            ],
+            "expect_source": False,
+            "desc": "Max Units - Communication"
+        },
+        {
+            "cat": "Units-Max",
+            "input": "maximum units I can overload in 2nd year biology?",
+            "should_contain": [
+                "don't have the official maximum number of units",
+                "Bachelor of Science in Biology",
+                "check with the department head",
+                "PROF. RP"
+            ],
+            "expect_source": False,
+            "desc": "Max Units - Biology"
+        },
     ]
 
     passed_count = 0

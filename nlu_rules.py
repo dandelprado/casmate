@@ -178,6 +178,17 @@ matcher.add(
 )
 
 matcher.add(
+    "INTENT_MAX_UNITS",
+    [
+        [{"LOWER": {"IN": ["maximum", "max"]}}, {"LOWER": {"IN": ["units", "unit", "load"]}}],
+        [{"LOWER": "highest"}, {"LOWER": "number"}, {"LOWER": "of"}, {"LOWER": "units"}],
+        [{"LOWER": "overload"}],
+        [{"LOWER": "overloading"}],
+        [{"LOWER": "as"}, {"LOWER": "many"}, {"LOWER": "units"}, {"LOWER": "as"}],
+    ],
+)
+
+matcher.add(
     "INTENT_DEPT_HEADS_LIST",
     [
         [
@@ -247,6 +258,9 @@ def detect_intent(text: str) -> str:
     if "INTENT_PREREQ" in labels or "prereq" in tlow or "prerequisite" in tlow:
         return "prerequisites"
 
+    if "INTENT_MAX_UNITS" in labels or any(x in tlow for x in ["maximum", "max units", "overload", "highest number of units"]):
+        return "max_units"
+
     if "INTENT_UNITS" in labels or re.search(r"\bunits?\b", tlow):
         return "units"
 
@@ -276,7 +290,6 @@ def detect_intent(text: str) -> str:
              return "curriculum"
 
     return "courseinfo"
-
 def _extract_year(text: str) -> Optional[int]:
     tl = (text or "").lower()
     

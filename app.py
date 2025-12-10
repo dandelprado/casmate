@@ -24,6 +24,7 @@ from data_api import (
     department_lookup,
     get_dept_role_label,
     get_cas_dean,
+    get_program_head,
     _clean_course_query
 )
 from nlu_rules import (
@@ -158,6 +159,47 @@ def _looks_like_greeting(text: str) -> bool:
     t = (text or "").strip().lower()
     t = re.sub(r"[!.\s]+$", "", t)
     return t in GREETINGS
+
+def handle_max_units(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
+    programs = data["programs"]
+    departments = data["departments"]
+    
+    prog_query = ents.get("program") or user_text
+    
+    res = get_program_head(programs, departments, prog_query)
+    
+    if not res:
+        return (
+            "I'm not sure which program you're asking about regarding maximum units. "
+            "Could you specify the program (e.g., 'max units for BS CS')?",
+            None
+        )
+
+    pname, head_name = res
+    
+    if not _is_supported_program(pname):
+        return (
+             f"I don't have the official maximum number of units for {pname}. "
+             "Your best bet is to ask the CAS Dean's office directly.",
+             None
+        )
+
+    lines = [
+        f"I don't have the official maximum number of units you're allowed to take as a {pname} student.",
+        f"What I can show you instead is the usual total units for {pname} and how they're split per trimester.",
+        ""
+    ]
+    
+    if head_name:
+        lines.append(
+            f"For official rules about maximum loads or overloads, it's best to check with the department head, {head_name}."
+        )
+    else:
+        lines.append(
+            "For official rules about maximum loads or overloads, it's best to check with your Department Head."
+        )
+
+    return (" ".join(lines), None)
 
 
 def _clean_as_name(s: str) -> str:
@@ -1033,7 +1075,7 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
     if _is_generic_thesis_query(user_text) or _is_generic_nstp_query(user_text) or _is_generic_pathfit_query(user_text):
         return handle_prereq(user_text, ents)
 
-    strong_intent = intent in {"units", "prerequisites", "curriculum"}
+    strong_intent = intent in {"units", "prerequisites", "curriculum", "max_units"}
     
     if len(words) <= 1 and not is_code and not strong_intent and not any(w in tlow for w in ["abel", "bael", "who", "what", "where", "when", "why", "how", "list", "show"]):
          if cleaned_q in GREETINGS:
@@ -1050,6 +1092,8 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
         return handle_dept_heads_list_or_clarify(user_text, ents)
     if intent == "dept_heads_list": return handle_dept_heads_list_or_clarify(user_text, ents)
     if intent == "dept_head_one": return handle_dept_head_one(user_text, ents)
+    if intent == "max_units":
+        return handle_max_units(user_text, ents)
 
     plain = tlow
     nonnames = {"yes", "yeah", "yup", "ok", "okay", "sure", "thanks", "thank you"}
