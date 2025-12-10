@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import streamlit as st
 from rapidfuzz import fuzz
@@ -43,6 +43,15 @@ def load_css_rel_path(css_path: Path):
 st.set_page_config(page_title="CASmate Chat", layout="centered")
 load_css_rel_path(Path("styles.css"))
 
+OFFICIAL_SOURCE = "Approved Curriculum from the Registrar’s Office"
+
+SUPPORTED_PROGRAMS = [
+    "COMPUTER SCIENCE",
+    "POLITICAL SCIENCE",
+    "COMMUNICATION",
+    "BIOLOGY",
+    "PSYCHOLOGY"
+]
 
 @st.cache_data(show_spinner=False)
 def bootstrap_data():
@@ -81,9 +90,9 @@ def render_header():
 render_header()
 
 
-def render_message(sender, message):
+def render_message(sender, message, source=None):
     st.markdown(
-        getchatbubblehtml(sender, message, user_name=st.session_state.user_name),
+        getchatbubblehtml(sender, message, source=source, user_name=st.session_state.user_name),
         unsafe_allow_html=True
     )
 
@@ -93,7 +102,7 @@ if not st.session_state.did_intro_prompt:
     st.session_state.did_intro_prompt = True
 
 for msg in st.session_state.chat:
-    render_message(msg["sender"], msg["message"])
+    render_message(msg["sender"], msg["message"], source=msg.get("source"))
 
 CODE_RE = re.compile(r"\b([A-Za-z]{2,4})[\s-]?(\d{2,})\b")
 GREETINGS = {
@@ -155,6 +164,14 @@ def _clean_as_name(s: str) -> str:
     t = re.sub(r"[^A-Za-z\-\s']", " ", s or "").strip()
     t = re.sub(r"\s+", " ", t)
     return t.title()
+
+
+def _is_supported_program(program_name: str) -> bool:
+    """Checks if the program name is in the supported list."""
+    if not program_name:
+        return False
+    p_upper = program_name.upper()
+    return any(k in p_upper for k in SUPPORTED_PROGRAMS)
 
 
 def _extract_name(text: str) -> Optional[str]:
@@ -358,7 +375,6 @@ def _build_pathfit_overview() -> str:
             prereq_list = ", ".join(format_course_name_then_code(p) for p in needed)
             lines.append(f"• {name_code} – prerequisites: {prereq_list}.")
     
-
     return "\n".join(lines)
 
 
@@ -452,13 +468,13 @@ def _build_thesis_overview() -> str:
     return "\n".join(lines)
 
 
-def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None) -> str:
+def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None) -> Tuple[str, Optional[str]]:
     courses = data["courses"]
     prereqs = data["prereqs"]
 
-    if _is_generic_thesis_query(user_text): return _build_thesis_overview()
-    if _is_generic_nstp_query(user_text): return _build_nstp_overview()
-    if _is_generic_pathfit_query(user_text): return _build_pathfit_overview()
+    if _is_generic_thesis_query(user_text): return (_build_thesis_overview(), OFFICIAL_SOURCE)
+    if _is_generic_nstp_query(user_text): return (_build_nstp_overview(), OFFICIAL_SOURCE)
+    if _is_generic_pathfit_query(user_text): return (_build_pathfit_overview(), OFFICIAL_SOURCE)
 
     course = course_obj
     
@@ -466,7 +482,7 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
         if ents.get("course_code"):
             course, _ = find_course_any(data, ents["course_code"])
             if not course:
-                 return f"I see you mentioned '{ents['course_code']}', but I can't find a course with that code. Could you check the spelling?"
+                 return (f"I see you mentioned '{ents['course_code']}', but I can't find a course with that code. Could you check the spelling?", None)
 
         if not course and ents.get("course_title"):
             fb = fuzzy_best_course_title(courses, ents["course_title"], score_cutoff=70)
@@ -480,7 +496,8 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
             "I'm not totally sure which course you mean yet. "
             "Could you give me the full course title or code? For example:\n"
             "• Prerequisite of Microbiology (BIO 103 L/L)\n"
-            "• What are the prereqs for Purposive Communication (PCOM)?"
+            "• What are the prereqs for Purposive Communication (PCOM)?",
+            None
         )
 
     course_code = (course.get("course_code") or course.get("course_id") or "").strip().upper()
@@ -489,14 +506,16 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
         return (
             "English Review (IENG) is a diagnostic-placement subject based on your "
             "English diagnostic test results. Please check with the Guidance Office "
-            "via their Facebook page https://www.facebook.com/NWUGuidance to confirm if you need it."
+            "via their Facebook page https://www.facebook.com/NWUGuidance to confirm if you need it.",
+            None
         )
 
     if course_code == "IMAT":
         return (
             "Math Review (IMAT) is a diagnostic-placement subject based on your "
             "Math diagnostic test results. Please check with the Guidance Office "
-            "via their Facebook page https://www.facebook.com/NWUGuidance to confirm if you need it."
+            "via their Facebook page https://www.facebook.com/NWUGuidance to confirm if you need it.",
+            None
         )
 
     needed = get_prerequisites(prereqs, courses, course.get("course_id"))
@@ -541,7 +560,7 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
         lines.append("You can check with the Guidance Office via their Facebook page https://www.facebook.com/NWUGuidance.")
     
     lines.append(f"")
-    return "\n".join(lines)
+    return ("\n".join(lines), OFFICIAL_SOURCE)
 
 
 def _format_units(u_val) -> str:
@@ -552,7 +571,7 @@ def _format_units(u_val) -> str:
         return f"{u_val} units"
 
 
-def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) -> str:
+def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) -> Tuple[str, Optional[str]]:
     programs = data["programs"]
     plan = data["plan"]
     courses = data["courses"]
@@ -560,6 +579,14 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
     tlow = (user_text or "").lower()
     t_clean = re.sub(r"[^\w\s]", "", tlow)
     tokens = t_clean.split()
+
+    english_signals = ["english language", "ab english", "ba english", "ba in english", "ab in english", "abel", "bael"]
+    if any(sig in tlow for sig in english_signals):
+        return (
+            "I haven't been given the unit breakdown for BA in English Language yet.\n\n"
+            "Your best bet is to ask the department head or the CAS Dean's office directly—they'll have the most up-to-date info!",
+            None
+        )
     
     stops = {
         "units", "unit", "credit", "load", "what", "is", "are", "the", 
@@ -577,7 +604,7 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
         has_number = bool(re.search(r"\d", user_text))
         if has_number or not ents.get("program"):
              u_str = _format_units(course_candidate.get('units', 'NA'))
-             return f"{format_course(course_candidate)} — {u_str}. "
+             return (f"{format_course(course_candidate)} — {u_str}. ", OFFICIAL_SOURCE)
 
     prog_row = None
     if ents.get("program"):
@@ -591,21 +618,19 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
     if prog_row:
         pid = prog_row["program_id"]
         pname = prog_row["program_name"]
-        pname_lower = (pname or "").lower()
+
+        if not _is_supported_program(pname):
+            return (
+                f"I haven't been given the unit breakdown for {pname} yet.\n\n"
+                "Your best bet is to ask the department head or the CAS Dean's office directly—they'll have the most up-to-date info!",
+                None
+            )
 
         year_labels = {1: "First year", 2: "Second year", 3: "Third year", 4: "Fourth year"}
         term_labels = {1: "First trimester", 2: "Second trimester", 3: "Third trimester"}
 
         year = ents.get("year_num")
         if not year:
-            has_entries = any((entry.get("program_id") == pid) for entry in plan)
-            if not has_entries and "english language" in pname_lower:
-                return (
-                    "The detailed unit loading for BA in English Language isn’t loaded in my system yet.\n\n"
-                    "For accurate info, please check directly with the Department of Language and Literature. "
-                    "You can start with the department head, DR. JV."
-                )
-
             year_values: list[int] = []
             for entry in plan:
                 if entry.get("program_id") != pid: continue
@@ -617,7 +642,7 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
             
             year_values = sorted(year_values)
             if not year_values:
-                return f"I couldn't find unit data for {pname} in the curriculum plan."
+                return (f"I couldn't find unit data for {pname} in the curriculum plan.", None)
 
             lines: list[str] = [f"Total units for {pname} by year (excluding diagnostic review subjects):"]
             overall_total = 0
@@ -638,7 +663,7 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
                 overall_total += total_y
 
             if overall_total == 0:
-                return f"I couldn't find unit data for {pname} in the curriculum plan."
+                return (f"I couldn't find unit data for {pname} in the curriculum plan.", None)
 
             lines.append("")
             overall_line = "Overall total for the full program"
@@ -650,19 +675,13 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
                 lines.append("Note: Diagnostic review subjects like IMAT (Math Review) and IENG (English Review) are not included here.")
             
             lines.append(f"")
-            return "\n".join(lines)
+            return ("\n".join(lines), OFFICIAL_SOURCE)
 
         total_units, by_sem, diagnostic_by_sem = units_by_program_year_with_exclusions(plan, courses, pid, year)
         year_label = year_labels.get(year, f"Year {year}")
 
-        if not by_sem and "english language" in pname_lower:
-            return (
-                "The detailed unit loading for BA in English Language isn’t loaded yet.\n\n"
-                "Please check directly with the Department of Language and Literature."
-            )
-
         if not by_sem:
-            return f"I couldn't find unit data for {year_label} {pname} in the curriculum plan."
+            return (f"I couldn't find unit data for {year_label} {pname} in the curriculum plan.", None)
 
         term = ents.get("term_num")
         lines: list[str] = []
@@ -672,7 +691,7 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
             units_for_term = by_sem.get(term_key)
             sem_label = term_labels.get(term, f"Trimester {term}")
             if not units_for_term:
-                return f"I couldn't find unit data for {year_label} {pname}, {sem_label}."
+                return (f"I couldn't find unit data for {year_label} {pname}, {sem_label}.", None)
             has_diag = bool(diagnostic_by_sem.get(term_key))
             header = f"Units for {year_label} {pname}, {sem_label}" + (" (excluding diagnostic review subjects):" if has_diag else ":")
             lines.append(header)
@@ -681,7 +700,7 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
                 lines.append("Note: Diagnostic review subjects like IMAT (Math Review) and IENG (English Review) are not included.")
             
             lines.append(f"")
-            return "\n".join(lines)
+            return ("\n".join(lines), OFFICIAL_SOURCE)
 
         any_diag = any(diagnostic_by_sem.values())
         header = f"Total units for {year_label} {pname}" + (" (excluding diagnostic review subjects):" if any_diag else ":")
@@ -696,29 +715,39 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
             lines.append("Note: Diagnostic review subjects are not included.")
         
         lines.append(f"")
-        return "\n".join(lines)
+        return ("\n".join(lines), OFFICIAL_SOURCE)
 
     if not course_candidate and meaningful:
         course_candidate, _ = find_course_any(data, user_text)
         if course_candidate:
             u_str = _format_units(course_candidate.get('units', 'NA'))
-            return f"{format_course(course_candidate)} — {u_str}. "
+            return (f"{format_course(course_candidate)} — {u_str}. ", OFFICIAL_SOURCE)
 
     return (
         "I'd be happy to check the units for you! To give you the right number, "
-        "could you mention the specific program or course?"
+        "could you mention the specific program or course?",
+        None
     )
 
 
-def handle_curriculum(user_text: str, ents: dict) -> str:
+def handle_curriculum(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
     programs = data["programs"]
     plan = data["plan"]
     courses = data["courses"]
+    
+    tlow = (user_text or "").lower()
+
+    english_signals = ["english language", "ab english", "ba english", "ba in english", "ab in english", "abel", "bael"]
+    if any(sig in tlow for sig in english_signals):
+        return (
+            "I haven't been given the full curriculum map for BA in English Language yet.\n\n"
+            "Your best bet is to ask the department head or the CAS Dean's office directly—they'll have the most up-to-date info!",
+            None
+        )
 
     if ents.get("program") and not bool(CODE_RE.search(user_text)):
          pass
     else:
-        tlow = (user_text or "").lower()
         check_text = tlow.replace("curriculum", "").replace(" in ", " ").strip()
         potential_course, _ = find_course_any(data, check_text)
         
@@ -738,19 +767,15 @@ def handle_curriculum(user_text: str, ents: dict) -> str:
                 prog_list = "\n".join([f"• {p}" for p in sorted(found_programs)])
                 return (
                     f"Yes, **{c_title} ({c_code})** is in the curriculum.\n\n"
-                    f"It is part of the following programs:\n{prog_list}"
+                    f"It is part of the following programs:\n{prog_list}",
+                    OFFICIAL_SOURCE
                 )
             else:
                 return (
                     f"I found the course **{c_title} ({c_code})**, but it doesn't appear "
-                    "to be mapped to any specific program in the current curriculum plan."
+                    "to be mapped to any specific program in the current curriculum plan.",
+                    OFFICIAL_SOURCE
                 )
-
-    if any(x in (user_text or "").lower() for x in ["bael", "abel", "ab english language", "ba english language", "ab english", "ba english", "english language"]):
-        return (
-            "The detailed curriculum plan for BA in English Language isn’t loaded in my system yet.\n\n"
-            "For now, it’s best to check directly with the Department of Language and Literature."
-        )
 
     prog_row = None
     if ents.get("program"):
@@ -762,21 +787,29 @@ def handle_curriculum(user_text: str, ents: dict) -> str:
 
     if not prog_row:
         return (
-            "I’m not sure which program you’re asking about yet.\n\n"
+            "I'm not quite sure which program you mean.\n\n"
             "Some examples I can help with are:\n"
             "• BS Computer Science\n"
-            "• BS Biology\n"
             "• BS Psychology\n"
             "• BA Communication\n"
             "• BA Political Science\n\n"
-            "Which program are you interested in?"
+            "Which program are you interested in?",
+            None
         )
 
     pid = prog_row["program_id"]
     pname = prog_row["program_name"]
+    
+    if not _is_supported_program(pname):
+        return (
+            f"I don't have the full curriculum map for {pname} handy right now.\n\n"
+             "Your best bet is to ask the department head or the CAS Dean's office directly—they'll have the most up-to-date info!",
+            None
+        )
+
     has_entries = any((entry.get("program_id") == pid) for entry in plan)
     if not has_entries:
-        return f"The detailed curriculum plan for {pname} isn’t available in my system yet."
+        return (f"I don't have the full curriculum map for {pname} handy right now.", None)
 
     year = ents.get("year_num")
     term = ents.get("term_num")
@@ -786,7 +819,8 @@ def handle_curriculum(user_text: str, ents: dict) -> str:
             f"I can list all the subjects for {pname}, but that would be a very long answer.\n\n"
             f"To keep it readable, could you tell me which year level you’re looking at? For example:\n"
             f"• 1st year {pname} subjects?\n"
-            f"• 2nd year {pname} courses?"
+            f"• 2nd year {pname} courses?",
+            None
         )
 
     year_labels = {1: "First year", 2: "Second year", 3: "Third year", 4: "Fourth year"}
@@ -794,12 +828,12 @@ def handle_curriculum(user_text: str, ents: dict) -> str:
     
     year_exists = any((entry.get("program_id") == pid and int(entry.get("year_level", 0)) == year) for entry in plan)
     if not year_exists:
-         return f"I couldn’t find any curriculum entries for {year_label} (Year {year}) in {pname}. The current data might only cover up to Year 3."
+         return (f"I couldn’t find any curriculum entries for {year_label} (Year {year}) in {pname}. The current data might only cover up to Year 3.", None)
 
     if term:
         term_courses = courses_for_plan(plan, courses, pid, year, term)
         if not term_courses:
-            return f"I couldn’t find any curriculum entries for {year_label} {pname}, {_term_label(term)}."
+            return (f"I couldn’t find any curriculum entries for {year_label} {pname}, {_term_label(term)}.", None)
         
         lines: list[str] = [f"Courses for {year_label} {pname}, {_term_label(term)}:"]
         diag_codes: set[str] = set()
@@ -811,7 +845,7 @@ def handle_curriculum(user_text: str, ents: dict) -> str:
             lines.append("\nNote: English Review (IENG) and Math Review (IMAT) depend on your diagnostic test results.")
         
         lines.append(f"")
-        return "\n".join(lines)
+        return ("\n".join(lines), OFFICIAL_SOURCE)
 
     lines = [f"Courses for {year_label} {pname}:"]
     any_term = False
@@ -827,33 +861,33 @@ def handle_curriculum(user_text: str, ents: dict) -> str:
             if code in {"IMAT", "IENG"}: diag_codes.add(code)
             lines.append(f"• {format_course_name_then_code(c)}")
     if not any_term:
-        return f"I couldn’t find any curriculum entries for {year_label} {pname} in the current data. It might not be loaded yet."
+        return (f"I couldn’t find any curriculum entries for {year_label} {pname} in the current data. It might not be loaded yet.", None)
     if diag_codes:
         lines.append("\nNote: English Review (IENG) and Math Review (IMAT) depend on your diagnostic test results.")
     
     lines.append(f"")
-    return "\n".join(lines)
+    return ("\n".join(lines), OFFICIAL_SOURCE)
 
 
-def handle_dept_heads_list_or_clarify(user_text: str, ents: dict) -> str:
+def handle_dept_heads_list_or_clarify(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
     tlow = (user_text or "").lower().strip()
     college = _detect_college(user_text)
     if college and college != "CAS":
-        return _refer_university()
+        return (_refer_university(), None)
     if "all" in tlow or "cas" in tlow or "entire" in tlow or "everyone" in tlow or college == "CAS":
         rows = list_department_heads(data["departments"])
-        if not rows: return "No department heads found."
+        if not rows: return ("No department heads found.", None)
         lines = ["Department heads (including Dean):"]
         for r in rows:
             lines.append(f"- {_format_head_row(r)}")
         lines.append("")
-        return "\n".join(lines)
+        return ("\n".join(lines), None)
     st.session_state.awaiting_college_scope = True
     st.session_state.pending_intent = "dept_heads_college"
-    return "Do you mean CAS department heads, or heads from another college?"
+    return ("Do you mean CAS department heads, or heads from another college?", None)
 
 
-def handle_dept_head_one(user_text: str, ents: dict) -> str:
+def handle_dept_head_one(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
     tlow = (user_text or "").lower()
     college = _detect_college(user_text)
     if "dean" in tlow:
@@ -862,15 +896,16 @@ def handle_dept_head_one(user_text: str, ents: dict) -> str:
             if dean_row and dean_row.get("department_head"):
                 return (
                     f"The current CAS Dean is {dean_row.get('department_head')}.\n\n"
-                    "For information about other colleges, please check with their respective offices. "
+                    "For information about other colleges, please check with their respective offices. ",
+                    None
                 )
-            return "No dean is recorded."
+            return ("No dean is recorded.", None)
         if college and college != "CAS":
-            return _refer_university()
+            return (_refer_university(), None)
         
         st.session_state.awaiting_college_scope = True
         st.session_state.pending_intent = "ask_dean_college"
-        return "Which college dean are you referring to? CAS, or another college?"
+        return ("Which college dean are you referring to? CAS, or another college?", None)
 
     dep_name = ents.get("department") or user_text
     drow = department_lookup(data["departments"], dep_name)
@@ -878,34 +913,34 @@ def handle_dept_head_one(user_text: str, ents: dict) -> str:
         if _is_dept_headish(user_text):
             st.session_state.awaiting_dept_scope = True
             st.session_state.pending_intent = "dept_heads_list"
-            return "Which department do you mean (e.g., 'Computer Science')? Or say 'all' for the full CAS list."
-        return "Sorry, that department wasn't recognized. Try the full name (e.g., Computer Science)."
+            return ("Which department do you mean (e.g., 'Computer Science')? Or say 'all' for the full CAS list.", None)
+        return ("Sorry, that department wasn't recognized. Try the full name (e.g., Computer Science).", None)
     head = drow.get("department_head")
     role = get_dept_role_label(drow, user_text)
     if not head:
-        return f"No {role.lower()} is recorded for {drow.get('department_name')}."
-    return f"The {role.lower()} is {head}. "
+        return (f"No {role.lower()} is recorded for {drow.get('department_name')}.", None)
+    return (f"The {role.lower()} is {head}. ", None)
 
 
-def resolve_pending(user_text: str) -> Optional[str]:
+def resolve_pending(user_text: str) -> Optional[Tuple[str, Optional[str]]]:
     tlow = (user_text or "").lower().strip()
     if st.session_state.pending_intent == "dept_heads_list":
         st.session_state.awaiting_dept_scope = False
         st.session_state.pending_intent = None
         if "all" in tlow or "cas" in tlow or "everything" in tlow or "everyone" in tlow:
             rows = list_department_heads(data["departments"])
-            if not rows: return "No department heads found."
+            if not rows: return ("No department heads found.", None)
             lines = ["Department heads (including Dean):"]
             for r in rows:
                 lines.append(f"- {_format_head_row(r)}")
             lines.append("")
-            return "\n".join(lines)
+            return ("\n".join(lines), None)
         head = get_department_head_by_name(data["departments"], user_text)
         if head:
             drow = department_lookup(data["departments"], user_text)
             role = get_dept_role_label(drow, user_text)
-            return f"The {role.lower()} is {head}."
-        return "Got it—please name the department (e.g., 'Computer Science') or say 'all'."
+            return (f"The {role.lower()} is {head}.", None)
+        return ("Got it—please name the department (e.g., 'Computer Science') or say 'all'.", None)
     if st.session_state.pending_intent in {"ask_dean_college","dept_heads_college"}:
         st.session_state.awaiting_college_scope = False
         intent = st.session_state.pending_intent
@@ -915,29 +950,29 @@ def resolve_pending(user_text: str) -> Optional[str]:
             if intent == "ask_dean_college":
                 dean_row = get_cas_dean(data["departments"])
                 if dean_row and dean_row.get("department_head"):
-                    return f"The dean is {dean_row.get('department_head')}."
-                return "No dean is recorded."
+                    return (f"The dean is {dean_row.get('department_head')}.", None)
+                return ("No dean is recorded.", None)
             if intent == "dept_heads_college":
                 rows = list_department_heads(data["departments"])
-                if not rows: return "No department heads found."
+                if not rows: return ("No department heads found.", None)
                 lines = ["Department heads (including Dean):"]
                 for r in rows:
                     lines.append(f"- {_format_head_row(r)}")
                 lines.append("")
-                return "\n".join(lines)
+                return ("\n".join(lines), None)
         if college and college != "CAS":
-            return _refer_university()
-        return "Thanks. Please specify a college."
+            return (_refer_university(), None)
+        return ("Thanks. Please specify a college.", None)
     return None
 
 
-def route(user_text: str) -> str:
+def route(user_text: str) -> Tuple[str, Optional[str]]:
     if st.session_state.awaiting_dept_scope or st.session_state.awaiting_college_scope:
         resolved = resolve_pending(user_text)
         if resolved: return resolved
 
     if _looks_like_payment(user_text):
-        return _refer_university(channel_hint="finance")
+        return (_refer_university(channel_hint="finance"), None)
     
     tlow = (user_text or "").lower().strip().rstrip("?!.")
     ents = extract_entities(user_text)
@@ -954,14 +989,16 @@ def route(user_text: str) -> str:
         return (
             f"I found **{format_course(c)}**.\n\n"
             "What would you like to know about it? I can check its **units**, **prerequisites**, "
-            "or verify if it's in your curriculum. "
+            "or verify if it's in your curriculum. ",
+            None
         )
     
     if c and match_type == "fuzzy_code":
          return (
             f"I found a possible match: **{format_course(c)}**.\n\n"
             "Is this the course you're looking for? "
-            "If yes, I can provide its **units** or **prerequisites**."
+            "If yes, I can provide its **units** or **prerequisites**.",
+            None
         )
          
     cleaned_q = _clean_course_query(user_text)
@@ -969,10 +1006,10 @@ def route(user_text: str) -> str:
     
     is_code = bool(CODE_RE.search(user_text)) or (len(words) == 1 and any(char.isdigit() for char in words[0]))
 
-    if len(words) <= 1 and not is_code and not any(w in tlow for w in ["who", "what", "where", "when", "why", "how", "list", "show"]):
+    if len(words) <= 1 and not is_code and not any(w in tlow for w in ["abel", "bael", "who", "what", "where", "when", "why", "how", "list", "show"]):
          if cleaned_q in GREETINGS:
-             return "Hello! How can I help you today?"
-         return "I'm not sure what you're asking about. Could you be more specific? (e.g., 'BS Psychology subjects', 'Intro to Psychology units')"
+             return ("Hello! How can I help you today?", None)
+         return ("I'm not sure what you're asking about. Could you be more specific? (e.g., 'BS Psychology subjects', 'Intro to Psychology units')", None)
 
     if "curriculum" in tlow:
         return handle_curriculum(user_text, ents)
@@ -988,7 +1025,7 @@ def route(user_text: str) -> str:
     plain = tlow
     nonnames = {"yes", "yeah", "yup", "ok", "okay", "sure", "thanks", "thank you"}
     if plain in nonnames:
-        return "Got it. If you have a specific question about a course or program, feel free to ask!"
+        return ("Got it. If you have a specific question about a course or program, feel free to ask!", None)
 
     if not ents.get("program") and intent == "units":
          prog_match = fuzzy_best_program(data["programs"], user_text, score_cutoff=85)
@@ -1039,7 +1076,7 @@ def route(user_text: str) -> str:
             for i in range(min(len(hits), 6)):
                 match_c = hits[i][2]
                 lines.append(f"• **{format_course(match_c)}**")
-            return "\n".join(lines)
+            return ("\n".join(lines), None)
 
         if top_score >= 92 or is_perfect:
              c = top_course
@@ -1048,7 +1085,8 @@ def route(user_text: str) -> str:
              return (
                 f"I found **{format_course(c)}**.\n\n"
                 "What would you like to know about it? I can check its **units**, **prerequisites**, "
-                "or verify if it's in your curriculum. "
+                "or verify if it's in your curriculum. ",
+                None
             )
 
         if top_score >= 65:
@@ -1056,19 +1094,20 @@ def route(user_text: str) -> str:
             for i in range(min(len(hits), 6)):
                 match_c = hits[i][2]
                 lines.append(f"• **{format_course(match_c)}**")
-            return "\n".join(lines)
+            return ("\n".join(lines), None)
 
     if intent == "units": return handle_units(user_text, ents)
     if intent == "prerequisites": return handle_prereq(user_text, ents)
 
     if ents.get("program"):
-         return "I'm not totally sure which part of that program you need. Could you specify subjects or prerequisites?"
+         return ("I'm not totally sure which part of that program you need. Could you specify subjects or prerequisites?", None)
 
     return (
         "I'm not totally sure what you need yet based on that message.\n\n"
         "Could you rephrase it with more detail? For example:\n"
         "• BS Biology subjects?\n"
-        "• Prerequisite of Purposive Communication?"
+        "• Prerequisite of Purposive Communication?",
+        None
     )
 
 
@@ -1087,17 +1126,25 @@ if prompt:
             if maybe_name:
                 st.session_state.user_name = maybe_name
                 opening = (
-                    f"Nice to meet you, {maybe_name}! "
-                    "Here's how I can help: outline course prerequisites, summarize unit loads by year and program, "
-                    "and identify department leadership including the CAS Dean. "
-                    "If I need more details, I'll ask; and if something's better handled elsewhere, I'll point you to the right office."
+                    f"Nice to meet you, {maybe_name}!\n\n"
+                    "I can help you with course units, prerequisites, and curriculum info for these programs:\n"
+                    "• Bachelor of Science in Computer Science\n"
+                    "• Bachelor of Arts in Political Science\n"
+                    "• Bachelor of Arts in Communication\n"
+                    "• Bachelor of Science in Biology\n"
+                    "• Bachelor of Science in Psychology\n\n"
+                    "All my answers are based on the **Approved Curriculum from the Registrar’s Office**.\n\n"
+                    "I can also identify department heads and the CAS Dean. How can I assist you today?"
                 )
                 st.session_state.chat.append({"sender": "CASmate", "message": opening})
                 render_message("CASmate", opening)
             elif _looks_like_question(prompt):
-                reply = route(prompt)
-                st.session_state.chat.append({"sender": "CASmate", "message": reply})
-                render_message("CASmate", reply)
+                reply_text, reply_src = route(prompt)
+                msg_obj = {"sender": "CASmate", "message": reply_text}
+                if reply_src: msg_obj["source"] = reply_src
+                st.session_state.chat.append(msg_obj)
+                render_message("CASmate", reply_text, source=reply_src)
+                
                 nudge = "By the way, how should I address you?"
                 st.session_state.chat.append({"sender": "CASmate", "message": nudge})
                 render_message("CASmate", nudge)
@@ -1108,6 +1155,8 @@ if prompt:
     else:
         st.session_state.chat.append({"sender": "You", "message": prompt})
         render_message("You", prompt)
-        reply = route(prompt)
-        st.session_state.chat.append({"sender": "CASmate", "message": reply})
-        render_message("CASmate", reply)
+        reply_text, reply_src = route(prompt)
+        msg_obj = {"sender": "CASmate", "message": reply_text}
+        if reply_src: msg_obj["source"] = reply_src
+        st.session_state.chat.append(msg_obj)
+        render_message("CASmate", reply_text, source=reply_src)

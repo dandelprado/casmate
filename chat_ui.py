@@ -57,7 +57,7 @@ def getchatbubblehtml(sender, message, source=None, user_name=None):
     src_html = ''
     if source and str(source).strip():
         safe_source = html.escape(str(source).strip())
-        src_html = f'<div style="margin-top:10px; font-size:12px; opacity:0.7;">Source: {safe_source}</div>'
+        src_html = f'<div style="margin-top:12px; font-size:11px; color: #94a3b8; font-style: italic; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 6px;">Source: {safe_source}</div>'
     
     return f"""
     <div style="{bubble_style}">
