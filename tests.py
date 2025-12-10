@@ -495,6 +495,23 @@ def run_tests():
             "expect_source": False,
             "desc": "Max Units - Biology"
         },
+        {
+            "cat": "Units-Max",
+            "input": "english language overload",
+            "should_contain": [
+                "BA in English Language",
+                "Language and Literature",
+                "DR. JV",
+                "haven't been given the curriculum data"
+            ],
+            "should_not_contain": [
+                "usual total units",
+                "split per trimester",
+                "I'm not sure which program"
+            ],
+            "expect_source": False,
+            "desc": "Max Units - Unsupported BAEL (Static Response)"
+        },
     ]
 
     passed_count = 0

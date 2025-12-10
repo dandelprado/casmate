@@ -160,12 +160,28 @@ def _looks_like_greeting(text: str) -> bool:
     t = re.sub(r"[!.\s]+$", "", t)
     return t in GREETINGS
 
+
 def handle_max_units(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
     programs = data["programs"]
     departments = data["departments"]
     
-    prog_query = ents.get("program") or user_text
+    tlow = (user_text or "").lower()
+    english_signals = ["english language", "ab english", "ba english", "ba in english", "ab in english", "abel", "bael"]
     
+    if any(sig in tlow for sig in english_signals) or (ents.get("program") and any(sig in ents["program"].lower() for sig in english_signals)):
+        head_name = "the Department Head"
+        dept = next((d for d in departments if d["department_id"] == "D-LL"), None)
+        if dept and dept.get("department_head"):
+             head_name = dept.get("department_head")
+        
+        return (
+            f"I don't have the official maximum number of units for **BA in English Language**, "
+            "and I haven't been given the curriculum data to show you the usual breakdown yet.\n\n"
+            f"For official rules about maximum loads or overloads, it's best to check with the **Language and Literature** department head, **{head_name}**.",
+            None
+        )
+
+    prog_query = ents.get("program") or user_text
     res = get_program_head(programs, departments, prog_query)
     
     if not res:
