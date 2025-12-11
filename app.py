@@ -117,8 +117,43 @@ def render_developer_footer():
         unsafe_allow_html=True
     )
 
+def render_sidebar():
+    with st.sidebar:
+        st.title("📌 Quick Access")
+        
+        st.markdown("### 🏛️ University Resources")
+        # use_container_width=True makes the buttons stretch to fill the sidebar, looking very pro
+        st.link_button("🎓 Student Portal", "https://my.nwu.edu.ph/students", use_container_width=True)
+        st.link_button("📖 Student Manual", "https://www.nwu.edu.ph/student-manual", use_container_width=True)
+        st.link_button("🌐 NWU Website", "https://www.nwu.edu.ph/", use_container_width=True)
+        st.link_button("🔵 NWU Facebook", "https://www.facebook.com/NWUofficial", use_container_width=True)
+        
+        st.markdown("---")
+        st.markdown("### 🏢 CAS Departments")
+        st.caption("Direct links to official pages & messenger")
+
+        def dept_row(name, fb_url, msg_url):
+            st.markdown(f"**{name}**")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown(f"[Facebook]({fb_url})")
+            with c2:
+                st.markdown(f"[Messenger]({msg_url})")
+            st.markdown("")
+
+        dept_row("Computer Science", "https://fb.me/NWUCompSci", "https://m.me/NWUCompSci")
+        dept_row("Social Sciences", "https://fb.me/NWUSSH", "https://m.me/NWUSSH")
+        dept_row("Natural Sciences", "https://fb.me/NWUNatScie", "https://m.me/NWUNatScie")
+        dept_row("Languages & Lit", "https://fb.me/NWULLD", "https://m.me/NWULLD")
+        dept_row("Mathematics", "https://fb.me/NWUMathDept", "https://m.me/NWUMathDept")
+
+        st.markdown("---")
+        with st.expander("ℹ️ About CASmate"):
+            st.caption("CASmate is an AI assistant for the College of Arts & Sciences, designed to help with curriculum, prerequisites, and department info.")
+
 
 render_header()
+render_sidebar()
 render_developer_footer()
 
 
