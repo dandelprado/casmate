@@ -1082,10 +1082,12 @@ def handle_curriculum(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
     if ents.get("program") and not bool(CODE_RE.search(user_text)):
          pass
     else:
-        check_text = tlow.replace("curriculum", "").replace(" in ", " ").strip()
-        potential_course, _ = find_course_any(data, check_text)
+        raw_clean = _clean_course_query(user_text)
+        check_text = re.sub(r"\bcurriculum\b", "", raw_clean, flags=re.IGNORECASE).strip()
+
+        potential_course, match_type = find_course_any(data, check_text)
         
-        if potential_course and not any(x in tlow for x in ["list", "all", "show me", "what are"]):
+        if potential_course and match_type in ("code", "exact_title", "high_confidence_fuzzy", "alias") and not any(x in tlow for x in ["list", "all", "show me", "what are"]):
             c_title = potential_course.get("course_title")
             c_code = potential_course.get("course_code") or potential_course.get("course_id")
             
@@ -1104,12 +1106,23 @@ def handle_curriculum(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
                     f"It is part of the following programs:\n{prog_list}",
                     OFFICIAL_SOURCE
                 )
-            else:
-                return (
-                    f"I found the course **{c_title} ({c_code})**, but it doesn't appear "
-                    "to be mapped to any specific program in the current curriculum plan.",
-                    OFFICIAL_SOURCE
-                )
+        
+        hits = fuzzy_top_course_titles(courses, check_text, limit=10, score_cutoff=65)
+        if len(hits) >= 1:
+            unique_hits = []
+            seen = set()
+            for name, score, c in hits:
+                code = c.get("course_code")
+                if code and code not in seen:
+                    unique_hits.append(c)
+                    seen.add(code)
+            
+            if len(unique_hits) >= 1:
+                lines = [f"I see the following courses related to '{check_text}' in the curriculum:"]
+                for c in unique_hits[:5]:
+                    lines.append(f"• {format_course_name_then_code(c)}")
+                lines.append("\nWhich one are you asking about, and in which program?")
+                return ("\n".join(lines), OFFICIAL_SOURCE)
 
     prog_row = None
     if ents.get("program"):
@@ -1203,7 +1216,6 @@ def handle_curriculum(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
     
     lines.append(f"")
     return ("\n".join(lines), OFFICIAL_SOURCE)
-
 
 def handle_dept_heads_list_or_clarify(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
     tlow = (user_text or "").lower().strip()
@@ -1379,12 +1391,12 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
     c, match_type = find_course_any(data, user_text)
     
     if intent == "when_taken":
-        if c and match_type in ("code", "exact_title", "exact_title_subset", "alias"):
+        if c and match_type in ("code", "exact_title", "exact_title_subset", "alias", "high_confidence_fuzzy"):
              return handle_when_taken(user_text, ents, course_obj=c)
         else:
              return handle_when_taken(user_text, ents, course_obj=None)
 
-    if c and match_type in ("code", "exact_title", "exact_title_subset", "alias"):
+    if c and match_type in ("code", "exact_title", "exact_title_subset", "alias", "high_confidence_fuzzy"):
         if has_units: return handle_units(user_text, ents, course_obj=c)
         if has_prereq: return handle_prereq(user_text, ents, course_obj=c)
         return (
@@ -1429,8 +1441,16 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
     if intent == "dept_head_one": return handle_dept_head_one(user_text, ents)
     if intent == "max_units":
         return handle_max_units(user_text, ents)
+    
     if intent == "major_minor_subjects":
         return handle_major_minor_inquiry(user_text, ents)
+
+    if intent == "vague_program":
+        return (
+            "I'm a bit lost. Could you tell me exactly what you need in one sentence? "
+            "Mention the course code or program and whether you need units, prerequisites, or the curriculum.",
+            None
+        )
 
     plain = tlow
     nonnames = {"yes", "yeah", "yup", "ok", "okay", "sure", "thanks", "thank you"}
@@ -1508,7 +1528,7 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
                 if diff >= 15:
                     is_clear_winner = True
             
-            if c and (match_type in ("code", "exact_title", "exact_title_subset", "alias")) and intent == "when_taken":
+            if c and (match_type in ("code", "exact_title", "exact_title_subset", "alias", "high_confidence_fuzzy")) and intent == "when_taken":
                 return handle_when_taken(user_text, ents, course_obj=c)
                 
             if is_clear_winner:
@@ -1540,6 +1560,7 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
         "BS Biology subjects or Prerequisite of Purposive Communication.",
         None
     )
+
 
 placeholder = "Say hello, share your name, or ask about prerequisites, unit loads, or department leadership…"
 prompt = st.chat_input(placeholder)

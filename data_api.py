@@ -354,14 +354,11 @@ def find_course_any(data: Dict, text: str) -> Tuple[Optional[Dict], str]:
             
             intersection = text_tokens.intersection(title_tokens)
             
-            
-            
             if len(intersection) == len(text_tokens):
                 ratio = len(intersection) / len(title_tokens)
                 if ratio > best_overlap_ratio:
                     best_overlap_ratio = ratio
                     best_candidate = c
-        
         
         if best_candidate and best_overlap_ratio >= 0.8:
              return best_candidate, "exact_title_subset"
@@ -386,6 +383,17 @@ def find_course_any(data: Dict, text: str) -> Tuple[Optional[Dict], str]:
         if any(char.isdigit() for char in text):
             return code_choices[match_code], "fuzzy_code"
 
+    target_for_ratio = clean_for_alias if clean_for_alias else text
+    choices_titles = {c["course_title"]: c for c in courses if c.get("course_title")}
+    if choices_titles:
+        strict_match = process.extractOne(
+            target_for_ratio, choices_titles.keys(), scorer=fuzz.token_sort_ratio, score_cutoff=85, processor=utils.default_process
+        )
+        if strict_match:
+            match_title, score, _ = strict_match
+            if len(target_for_ratio) > 5:
+                return choices_titles[match_title], "high_confidence_fuzzy"
+
     fb = fuzzy_best_course_title(courses, text, score_cutoff=88)
     if fb:
         return fb[2], "fuzzy"
@@ -395,7 +403,6 @@ def find_course_any(data: Dict, text: str) -> Tuple[Optional[Dict], str]:
             return fb[2], "fuzzy"
 
     return None, "none"
-
 
 def fuzzy_best_program(
     programs: List[Dict], query: str, score_cutoff: int = 70

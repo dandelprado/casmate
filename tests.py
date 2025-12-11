@@ -844,6 +844,57 @@ def run_tests():
             "desc": "Major/Minor - Missing Program"
         },
 
+        # ==============================================================================
+        # SECTION 16: SPECIFIC BUG FIXES & ROBUSTNESS
+        # ==============================================================================
+        {
+            "cat": "BugFix",
+            "input": "prereq of medical microbiology",
+            "should_contain": ["Medical Microbiology", "MED 102"],
+            "should_not_contain": ["I found a few courses", "no listed prerequisites"],
+            "expect_source": True,
+            "desc": "Prioritize exact title 'Medical Microbiology' over 'Microbiology'"
+        },
+        {
+            "cat": "BugFix",
+            "input": "is there a prereq for fundamentals of discrete structures?",
+            "should_contain": ["Fundamentals of Discrete Structures", "no listed prerequisites", "CS 121"],
+            "should_not_contain": ["I found a few courses", "Advanced Discrete Structures"],
+            "expect_source": True,
+            "desc": "Disambiguate 'Fundamentals of Discrete...' vs 'Advanced Discrete...'"
+        },
+        {
+            "cat": "Edge",
+            "input": "is discrete structure in the curriculum?",
+            "should_contain": ["Fundamentals of Discrete Structures", "Advanced Discrete Structures"],
+            "should_not_contain": ["not quite sure which program"],
+            "expect_source": True,
+            "desc": "List multiple matches for generic existence query"
+        },
+        {
+            "cat": "Edge-Expanded",
+            "input": "BS Computer Science",
+            "should_contain": ["I'm a bit lost", "tell me exactly what you need"],
+            "should_not_contain": ["Calculus for Computer Science", "I found"],
+            "expect_source": None,
+            "desc": "Treat bare program query as vague (BS CS)"
+        },
+        {
+            "cat": "Edge-Expanded",
+            "input": "Bachelor of Science in Psychology",
+            "should_contain": ["I'm a bit lost", "tell me exactly what you need"],
+            "should_not_contain": ["Introduction to Psychology", "I found"],
+            "expect_source": None,
+            "desc": "Treat bare program query as vague (Psych)"
+        },
+        {
+            "cat": "Edge-Expanded",
+            "input": "bs psych",
+            "should_contain": ["I'm a bit lost"],
+            "expect_source": None,
+            "desc": "Treat bare program query as vague (Abbrev)"
+        }
+
 
         ]
 

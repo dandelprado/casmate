@@ -339,7 +339,11 @@ def detect_intent(text: str) -> str:
         if has_prog_hint:
              return "curriculum"
 
+    if has_prog_hint:
+        return "vague_program"
+
     return "courseinfo"
+
 
 def _extract_year(text: str) -> Optional[int]:
     tl = (text or "").lower()
