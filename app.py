@@ -122,7 +122,7 @@ def render_sidebar():
         st.title("📌 Quick Access")
         
         st.markdown("### 🏛️ University Resources")
-        # use_container_width=True makes the buttons stretch to fill the sidebar, looking very pro
+        
         st.link_button("🎓 Student Portal", "https://my.nwu.edu.ph/students", use_container_width=True)
         st.link_button("📖 Student Manual", "https://www.nwu.edu.ph/student-manual", use_container_width=True)
         st.link_button("🌐 NWU Website", "https://www.nwu.edu.ph/", use_container_width=True)
@@ -135,10 +135,19 @@ def render_sidebar():
         def dept_row(name, fb_url, msg_url):
             st.markdown(f"**{name}**")
             c1, c2 = st.columns(2)
+            
+            link_style = "text-decoration: none; color: #60a5fa; font-weight: 500;"
+            
             with c1:
-                st.markdown(f"[Facebook]({fb_url})")
+                st.markdown(
+                    f'<a href="{fb_url}" target="_blank" style="{link_style}">Facebook ↗</a>', 
+                    unsafe_allow_html=True
+                )
             with c2:
-                st.markdown(f"[Messenger]({msg_url})")
+                st.markdown(
+                    f'<a href="{msg_url}" target="_blank" style="{link_style}">Messenger ↗</a>', 
+                    unsafe_allow_html=True
+                )
             st.markdown("")
 
         dept_row("Computer Science", "https://fb.me/NWUCompSci", "https://m.me/NWUCompSci")
@@ -150,7 +159,6 @@ def render_sidebar():
         st.markdown("---")
         with st.expander("ℹ️ About CASmate"):
             st.caption("CASmate is an AI assistant for the College of Arts & Sciences, designed to help with curriculum, prerequisites, and department info.")
-
 
 render_header()
 render_sidebar()
