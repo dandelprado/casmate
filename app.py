@@ -178,6 +178,33 @@ def _is_lab_course(c: dict) -> bool:
 def _format_lab_code(code: str) -> str:
     return code.replace("L/L", "").strip()
 
+def _format_units_display(c: dict) -> Tuple[str, int]:
+    raw = str(c.get("credit_units") or "0").strip()
+    total = 0
+    display = ""
+    
+    if "/" in raw:
+        try:
+            parts = [int(p) for p in raw.split("/")]
+            total = sum(parts)
+            if len(parts) == 2:
+                display = f"{total} units ({parts[0]} lec / {parts[1]} lab)"
+            else:
+                display = f"{total} units ({raw})"
+        except:
+            total = 0
+            display = f"{raw} units"
+    else:
+        try:
+            total = int(float(raw))
+            unit_str = "unit" if total == 1 else "units"
+            display = f"{total} {unit_str}"
+        except:
+            total = 0
+            display = f"{raw} units"
+            
+    return display, total
+
 
 def handle_lab_subjects(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
     programs = data["programs"]
@@ -227,16 +254,23 @@ def handle_lab_subjects(user_text: str, ents: dict) -> Tuple[str, Optional[str]]
                 return (f"I didn't find any lab subjects for **{_friendly_year(target_year)}, {_friendly_term(target_term)}** in {pname}.", OFFICIAL_SOURCE)
             
             lines = [f"{header}, **{_friendly_term(target_term)}**:"]
+            term_units = 0
             for c in labs:
                 clean_code = _format_lab_code(c.get("course_code") or "")
                 title = c.get("course_title")
-                lines.append(f"• {title} ({clean_code})")
-            lines.append("\n(These courses have a laboratory component.)")
+                u_str, u_val = _format_units_display(c)
+                lines.append(f"• {title} ({clean_code}) — {u_str}")
+                term_units += u_val
+            
+            lines.append(f"\n**Total units for these lab subjects: {term_units}**")
+            lines.append("(These courses have a laboratory component.)")
             return ("\n".join(lines), OFFICIAL_SOURCE)
         
         else:
             lines = [f"{header}:"]
             found_any = False
+            year_units = 0
+            
             for t in [1, 2, 3]:
                 labs = get_labs_for_slice(target_year, t)
                 if labs:
@@ -245,11 +279,14 @@ def handle_lab_subjects(user_text: str, ents: dict) -> Tuple[str, Optional[str]]
                     for c in labs:
                         clean_code = _format_lab_code(c.get("course_code") or "")
                         title = c.get("course_title")
-                        lines.append(f"• {title} ({clean_code})")
+                        u_str, u_val = _format_units_display(c)
+                        lines.append(f"• {title} ({clean_code}) — {u_str}")
+                        year_units += u_val
             
             if not found_any:
                 return (f"I checked the curriculum for **{_friendly_year(target_year)}** {pname}, and I don't see any lab subjects listed.", OFFICIAL_SOURCE)
             
+            lines.append(f"\n**Total lab units for {_friendly_year(target_year)}: {year_units}**")
             return ("\n".join(lines), OFFICIAL_SOURCE)
 
     lines = [
@@ -270,7 +307,8 @@ def handle_lab_subjects(user_text: str, ents: dict) -> Tuple[str, Optional[str]]
                 for c in labs:
                     clean_code = _format_lab_code(c.get("course_code") or "")
                     title = c.get("course_title")
-                    year_buffer.append(f"• {title} ({clean_code})")
+                    u_str, _ = _format_units_display(c)
+                    year_buffer.append(f"• {title} ({clean_code}) — {u_str}")
         
         if year_labs_exist:
             lines.extend(year_buffer)
@@ -278,9 +316,8 @@ def handle_lab_subjects(user_text: str, ents: dict) -> Tuple[str, Optional[str]]
     if not found_any_global:
         return (f"I couldn't find any laboratory subjects listed for {pname} in the current dataset.", OFFICIAL_SOURCE)
 
-    lines.append("\n(Tip: If you want a shorter list, you can ask things like '1st year CS lab subjects'!)")
+    lines.append("\n(Tip: If you want a shorter list with total units, you can ask things like '1st year CS lab subjects'!)")
     return ("\n".join(lines), OFFICIAL_SOURCE)
-
 
 def handle_when_taken(user_text: str, ents: dict, course_obj: Optional[dict] = None) -> Tuple[str, Optional[str]]:
     plan = data["plan"]

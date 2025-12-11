@@ -677,6 +677,40 @@ def run_tests():
             "should_contain": ["Bachelor of Arts in Communication", "Multimedia", "IMM L"],
             "expect_source": True,
             "desc": "Comm Labs (Sparse lab program check)"
+        },
+
+        # ==============================================================================
+        # SECTION 14: LAB SUBJECTS WITH UNITS
+        # ==============================================================================
+        {
+            "cat": "Labs-Units",
+            "input": "1st year computer science lab subjects",
+            "should_contain": [
+                "3 units (2 lec / 1 lab)", 
+                "Total lab units for First Year"
+            ],
+            "expect_source": True,
+            "desc": "CS Year 1 Lab Units (Breakdown & Total)"
+        },
+        {
+            "cat": "Labs-Units",
+            "input": "2nd year biology lab subjects",
+            "should_contain": [
+                "5 units (3 lec / 2 lab)",
+                "Total lab units for Second Year"
+            ],
+            "expect_source": True,
+            "desc": "Bio Year 2 Lab Units (5-unit course check)"
+        },
+        {
+            "cat": "Labs-Units",
+            "input": "lab subjects for communication",
+            "should_contain": [
+                "1 unit",
+                "Multimedia (IMM L)"
+            ],
+            "expect_source": True,
+            "desc": "Comm Labs Unit Formatting (1 unit singular check)"
         }
     ]
     passed_count = 0
