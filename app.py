@@ -82,15 +82,44 @@ if "awaiting_college_scope" not in st.session_state:
 def render_header():
     st.markdown(
         """
-        <div class="hero">
-          <h1 class="hero-title gradient-text">CASmate — College of Arts & Sciences Assistant</h1>
-        </div>
-        """,
+<div style="text-align: center; margin-top: 20px; margin-bottom: 30px;">
+    <h1 style="font-size: 3.5rem; font-weight: 800; margin-bottom: 0px; background: linear-gradient(90deg, #60a5fa, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; display: inline-block;">
+        CASmate
+    </h1>
+    <h3 style="color: #e2e8f0; font-weight: 400; margin-top: -10px; font-size: 1.2rem;">
+        College of Arts & Sciences Assistant
+    </h3>
+</div>
+""",
         unsafe_allow_html=True,
+    )
+
+def render_developer_footer():
+    st.markdown(
+        """
+        <style>
+        .fixed-footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            padding: 4px;
+            font-size: 10px;
+            color: #888;
+            background: transparent;
+            z-index: 1000;
+            pointer-events: none;
+        }
+        </style>
+        <div class="fixed-footer">Developed by Dan del Prado</div>
+        """,
+        unsafe_allow_html=True
     )
 
 
 render_header()
+render_developer_footer()
 
 
 def render_message(sender, message, source=None):
