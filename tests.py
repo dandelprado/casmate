@@ -629,6 +629,54 @@ def run_tests():
             "should_contain": ["General Botany", "units"],
             "expect_source": True,
             "desc": "Single word alias 'botany'"
+        },
+
+        # ==============================================================================
+        # SECTION 13: LAB SUBJECTS
+        # ==============================================================================
+        {
+            "cat": "Labs",
+            "input": "1st year cs lab subjects",
+            "should_contain": ["Bachelor of Science in Computer Science", "Introduction to Computing", "CC 111", "Fundamentals of Programming", "CC 112"],
+            "should_not_contain": ["CC 111 L/L", "CC 112 L/L"],
+            "expect_source": True,
+            "desc": "CS Year 1 Labs (L/L Code logic + Strip formatting)"
+        },
+        {
+            "cat": "Labs",
+            "input": "lab classes for biology",
+            "should_contain": ["Bachelor of Science in Biology", "First Year", "General Zoology", "ZOO 101", "Second Year", "Microbiology"],
+            "should_not_contain": ["ZOO 101 L/L"],
+            "expect_source": True,
+            "desc": "Bio All Labs (Grouped by Year - No year specified)"
+        },
+        {
+            "cat": "Labs",
+            "input": "which subjects have labs in 2nd year polsci?",
+            "should_contain": ["Bachelor of Arts in Political Science", "Multimedia", "IMM L"],
+            "expect_source": True,
+            "desc": "PolSci Year 2 Labs (Lab Hours Logic, IMM L has no L/L but has hours)"
+        },
+        {
+            "cat": "Labs",
+            "input": "psychology lab subjects 1st year 2nd sem",
+            "should_contain": ["Bachelor of Science in Psychology", "Psychological Statistics"],
+            "expect_source": True,
+            "desc": "Psych Year 1 Sem 2 Labs (Specific Slice)"
+        },
+        {
+            "cat": "Labs",
+            "input": "lab subjects",
+            "should_contain": ["need to know which program"],
+            "expect_source": None,
+            "desc": "Missing Program for Lab Query"
+        },
+        {
+            "cat": "Labs",
+            "input": "communication lab classes",
+            "should_contain": ["Bachelor of Arts in Communication", "Multimedia", "IMM L"],
+            "expect_source": True,
+            "desc": "Comm Labs (Sparse lab program check)"
         }
     ]
     passed_count = 0

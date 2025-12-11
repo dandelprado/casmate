@@ -163,6 +163,123 @@ def _friendly_year(y: int) -> str:
 
 def _friendly_term(t: int) -> str:
     return {1: "First Trimester", 2: "Second Trimester", 3: "Third Trimester"}.get(int(t), f"Term {t}")
+def _is_lab_course(c: dict) -> bool:
+    code = (c.get("course_code") or "").upper()
+    if "L/L" in code:
+        return True
+    
+    lab_hours = str(c.get("laboratory_hours_per_week") or "").strip()
+    if lab_hours and lab_hours != "0":
+        return True
+        
+    return False
+
+
+def _format_lab_code(code: str) -> str:
+    return code.replace("L/L", "").strip()
+
+
+def handle_lab_subjects(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
+    programs = data["programs"]
+    plan = data["plan"]
+    courses = data["courses"]
+
+    prog_row = None
+    if ents.get("program"):
+        res = fuzzy_best_program(programs, ents["program"], score_cutoff=60)
+        if res:
+            _, _, prog_row = res
+    if not prog_row:
+        res = fuzzy_best_program(programs, user_text, score_cutoff=80)
+        if res:
+            _, _, prog_row = res
+
+    if not prog_row:
+        return (
+            "I'd love to help with lab subjects, but I need to know which program you're asking about first. "
+            "Are you asking about BS Computer Science, BS Biology, BS Psychology, BA Political Science, or BA Communication?",
+            None
+        )
+
+    pid = prog_row["program_id"]
+    pname = prog_row["program_name"]
+
+    target_year = ents.get("year_num")
+    target_term = ents.get("term_num")
+
+    def get_labs_for_slice(y, t):
+        term_courses = courses_for_plan(plan, courses, pid, y, t)
+        return [c for c in term_courses if _is_lab_course(c)]
+
+    if target_year:
+        if target_year > 3:
+            return (
+                f"I can only show lab subjects for years 1 to 3 in {pname}. "
+                "For 4th year subjects, please check with the department head.",
+                None
+            )
+            
+        header = f"Here are the laboratory subjects for **{_friendly_year(target_year)}** {pname}"
+        
+        if target_term:
+            labs = get_labs_for_slice(target_year, target_term)
+            if not labs:
+                return (f"I didn't find any lab subjects for **{_friendly_year(target_year)}, {_friendly_term(target_term)}** in {pname}.", OFFICIAL_SOURCE)
+            
+            lines = [f"{header}, **{_friendly_term(target_term)}**:"]
+            for c in labs:
+                clean_code = _format_lab_code(c.get("course_code") or "")
+                title = c.get("course_title")
+                lines.append(f"• {title} ({clean_code})")
+            lines.append("\n(These courses have a laboratory component.)")
+            return ("\n".join(lines), OFFICIAL_SOURCE)
+        
+        else:
+            lines = [f"{header}:"]
+            found_any = False
+            for t in [1, 2, 3]:
+                labs = get_labs_for_slice(target_year, t)
+                if labs:
+                    found_any = True
+                    lines.append(f"\n**{_friendly_term(t)}**:")
+                    for c in labs:
+                        clean_code = _format_lab_code(c.get("course_code") or "")
+                        title = c.get("course_title")
+                        lines.append(f"• {title} ({clean_code})")
+            
+            if not found_any:
+                return (f"I checked the curriculum for **{_friendly_year(target_year)}** {pname}, and I don't see any lab subjects listed.", OFFICIAL_SOURCE)
+            
+            return ("\n".join(lines), OFFICIAL_SOURCE)
+
+    lines = [
+        f"Here are all the laboratory subjects for **{pname}**, organized by year and semester so you can see the full picture:"
+    ]
+    
+    found_any_global = False
+    for y in [1, 2, 3]:
+        year_labs_exist = False
+        year_buffer = [f"\n**{_friendly_year(y)}**"]
+        
+        for t in [1, 2, 3]:
+            labs = get_labs_for_slice(y, t)
+            if labs:
+                year_labs_exist = True
+                found_any_global = True
+                year_buffer.append(f"**{_term_label(t)}**:")
+                for c in labs:
+                    clean_code = _format_lab_code(c.get("course_code") or "")
+                    title = c.get("course_title")
+                    year_buffer.append(f"• {title} ({clean_code})")
+        
+        if year_labs_exist:
+            lines.extend(year_buffer)
+
+    if not found_any_global:
+        return (f"I couldn't find any laboratory subjects listed for {pname} in the current dataset.", OFFICIAL_SOURCE)
+
+    lines.append("\n(Tip: If you want a shorter list, you can ask things like '1st year CS lab subjects'!)")
+    return ("\n".join(lines), OFFICIAL_SOURCE)
 
 
 def handle_when_taken(user_text: str, ents: dict, course_obj: Optional[dict] = None) -> Tuple[str, Optional[str]]:
@@ -1150,6 +1267,9 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
     tlow = (user_text or "").lower().strip().rstrip("?!.")
     ents = extract_entities(user_text)
     intent = detect_intent(user_text)
+
+    if intent == "lab_subjects":
+        return handle_lab_subjects(user_text, ents)
 
     if intent == "max_units":
         return handle_max_units(user_text, ents)

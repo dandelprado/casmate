@@ -204,6 +204,16 @@ matcher.add(
 )
 
 matcher.add(
+    "INTENT_LAB_SUBJECTS",
+    [
+        [{"LOWER": {"IN": ["lab", "laboratory"]}}, {"LOWER": {"IN": ["subjects", "courses", "classes", "units"]}}],
+        [{"LOWER": {"IN": ["lab", "laboratory"]}}],
+        [{"LOWER": "which"}, {"LOWER": "subjects"}, {"LOWER": "have"}, {"LOWER": {"IN": ["labs", "laboratories"]}}],
+        [{"LOWER": "lab"}, {"LOWER": "in"}, {"LOWER": "the"}, {"LOWER": "code"}], 
+    ]
+)
+
+matcher.add(
     "INTENT_DEPT_HEADS_LIST",
     [
         [
@@ -269,6 +279,9 @@ def detect_intent(text: str) -> str:
         "dept head" in tlow or "department head" in tlow or "who's the" in tlow
     ):
         return "dept_head_one"
+
+    if "INTENT_LAB_SUBJECTS" in labels or "lab" in tlow or "laboratory" in tlow:
+        return "lab_subjects"
 
     if "INTENT_MAX_UNITS" in labels or any(x in tlow for x in ["maximum", "max units", "overload", "highest number of units"]):
         return "max_units"
