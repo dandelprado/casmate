@@ -195,7 +195,9 @@ matcher.add(
         [{"LOWER": "what"}, {"LOWER": "year"}],
         [{"LOWER": "which"}, {"LOWER": "year"}],
         [{"LOWER": "when"}, {"LOWER": "do"}, {"LOWER": {"IN": ["i", "we", "students"]}}, {"LOWER": "take"}],
+        [{"LOWER": "when"}, {"LOWER": "should"}, {"LOWER": {"IN": ["i", "we"]}}, {"LOWER": "take"}],
         [{"LOWER": "when"}, {"LOWER": "is"}, {"OP": "*"}, {"LOWER": "taken"}],
+        [{"LOWER": "in"}, {"LOWER": "what"}, {"LOWER": "year"}, {"LOWER": "is"}],
         [{"LOWER": "is"}, {"OP": "+"}, {"LOWER": {"IN": ["1st", "2nd", "3rd", "4th", "first", "second", "third", "fourth"]}}, {"LOWER": {"IN": ["year", "yr"]}}],
         [{"LOWER": "what"}, {"LOWER": "level"}, {"LOWER": "is"}],
     ]
@@ -309,19 +311,15 @@ def detect_intent(text: str) -> str:
 
 def _extract_year(text: str) -> Optional[int]:
     tl = (text or "").lower()
-    
     m_ordinal = re.search(r"\b(\d+)(?:st|nd|rd|th)?\s+(?:year|yr)\b", tl)
     if m_ordinal:
         return int(m_ordinal.group(1))
-
     m_loose = re.search(r"\b(?:year|yr)\s*(\d+)\b", tl)
     if m_loose:
         return int(m_loose.group(1))
-
     for k, v in YEAR_MAP_STRICT.items():
         if k in tl:
             return v
-            
     return None
 
 def _extract_term(text: str) -> Optional[int]:
@@ -336,31 +334,18 @@ def _extract_term(text: str) -> Optional[int]:
 
 def extract_entities(text: str) -> Dict[str, Optional[str]]:
     doc = nlp(text or "")
-
     ents: Dict[str, Optional[str]] = {
-        "program": None,
-        "course_title": None,
-        "course_code": None,
-        "department": None,
-        "year_num": None,
-        "term_num": None,
+        "program": None, "course_title": None, "course_code": None,
+        "department": None, "year_num": None, "term_num": None,
     }
-
     m = CODE_RE.search(text or "")
-    if m:
-        ents["course_code"] = f"{m.group(1)}{m.group(2)}"
-
+    if m: ents["course_code"] = f"{m.group(1)}{m.group(2)}"
     for mid, s, e in phrase_matcher(doc):
         label = nlp.vocab.strings[mid]
         span_text = doc[s:e].text
-        if label == "PROG" and not ents["program"]:
-            ents["program"] = span_text
-        elif label == "COURSETITLE" and not ents["course_title"]:
-            ents["course_title"] = span_text
-        elif label == "DEPT" and not ents["department"]:
-            ents["department"] = span_text
-
+        if label == "PROG" and not ents["program"]: ents["program"] = span_text
+        elif label == "COURSETITLE" and not ents["course_title"]: ents["course_title"] = span_text
+        elif label == "DEPT" and not ents["department"]: ents["department"] = span_text
     ents["year_num"] = _extract_year(text)
     ents["term_num"] = _extract_term(text)
-
     return ents

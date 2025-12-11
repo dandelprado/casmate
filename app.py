@@ -55,6 +55,7 @@ SUPPORTED_PROGRAMS = [
     "PSYCHOLOGY"
 ]
 
+
 @st.cache_data(show_spinner=False)
 def bootstrap_data():
     data = load_all()
@@ -155,11 +156,14 @@ def _is_dept_headish(text: str) -> bool:
     fuzzy_head = fuzz.partial_ratio(t, "head") >= 80
     return (dept_like or fuzzy_dept) and (head_like or fuzzy_head)
 
+
 def _friendly_year(y: int) -> str:
-    return {1: "First year", 2: "Second year", 3: "Third year", 4: "Fourth year"}.get(int(y), f"Year {y}")
+    return {1: "First Year", 2: "Second Year", 3: "Third Year", 4: "Fourth Year"}.get(int(y), f"Year {y}")
+
 
 def _friendly_term(t: int) -> str:
     return {1: "First Trimester", 2: "Second Trimester", 3: "Third Trimester"}.get(int(t), f"Term {t}")
+
 
 def handle_when_taken(user_text: str, ents: dict, course_obj: Optional[dict] = None) -> Tuple[str, Optional[str]]:
     plan = data["plan"]
@@ -169,31 +173,29 @@ def handle_when_taken(user_text: str, ents: dict, course_obj: Optional[dict] = N
     course = course_obj
     if not course:
         course, _ = find_course_any(data, user_text)
-    
     if not course:
         if ents.get("course_code"):
             course, _ = find_course_any(data, ents["course_code"])
         elif ents.get("course_title"):
             fb = fuzzy_best_course_title(courses, ents["course_title"])
-            if fb: course = fb[2]
+            if fb:
+                course = fb[2]
 
     if not course:
         return (
             "I'm not sure which course you're asking about. "
             "Could you double-check the course name or code? "
-            "(e.g., 'When do I take Microbiology?' or 'What year is CC 111?')",
+            "(e.g., 'When do I take Microbiology?' or 'What Year is CC 111?')",
             None
         )
 
     cid = course.get("course_id")
     cname = format_course_name_then_code(course)
-    
     entries = get_course_curriculum_entries(plan, cid)
-    
     if not entries:
-         return (
+        return (
             f"I found **{cname}** in the course list, but it doesn't seem to be mapped "
-            "to any specific year level in the CAS curriculum data I have right now. "
+            "to any specific Year level in the CAS curriculum data I have right now. "
             "It's best to check with your department head.",
             OFFICIAL_SOURCE
         )
@@ -201,13 +203,13 @@ def handle_when_taken(user_text: str, ents: dict, course_obj: Optional[dict] = N
     prog_row = None
     if ents.get("program"):
         res = fuzzy_best_program(programs, ents["program"], score_cutoff=60)
-        if res: _, _, prog_row = res
+        if res:
+            _, _, prog_row = res
 
     relevant_entries = []
     if prog_row:
         pid = prog_row["program_id"]
         relevant_entries = [e for e in entries if e["program_id"] == pid]
-        
         if not relevant_entries:
             return (
                 f"I checked the curriculum for **{prog_row['program_name']}**, and I don't see **{cname}** listed there. "
@@ -224,8 +226,8 @@ def handle_when_taken(user_text: str, ents: dict, course_obj: Optional[dict] = N
             prog_names = []
             for upid in unique_progs:
                 p = next((p for p in programs if p["program_id"] == upid), None)
-                if p: prog_names.append(p.get("short_name") or p.get("program_name"))
-            
+                if p:
+                    prog_names.append(p.get("short_name") or p.get("program_name"))
             prog_list_str = "\n".join([f"• {pn}" for pn in sorted(prog_names)])
             return (
                 f"**{cname}** appears in multiple programs:\n{prog_list_str}\n\n"
@@ -236,7 +238,6 @@ def handle_when_taken(user_text: str, ents: dict, course_obj: Optional[dict] = N
     entry = relevant_entries[0]
     year = int(entry.get("year_level", 0))
     term = int(entry.get("semester", 0))
-    
     y_str = _friendly_year(year)
     t_str = _friendly_term(term)
     p_name = prog_row["program_name"] if prog_row else "your program"
@@ -246,6 +247,8 @@ def handle_when_taken(user_text: str, ents: dict, course_obj: Optional[dict] = N
         "This is based on the approved curriculum from the Registrar’s Office.",
         OFFICIAL_SOURCE
     )
+
+
 def _looks_like_greeting(text: str) -> bool:
     t = (text or "").strip().lower()
     t = re.sub(r"[!.\s]+$", "", t)
@@ -255,16 +258,13 @@ def _looks_like_greeting(text: str) -> bool:
 def handle_max_units(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
     programs = data["programs"]
     departments = data["departments"]
-    
     tlow = (user_text or "").lower()
     english_signals = ["english language", "ab english", "ba english", "ba in english", "ab in english", "abel", "bael"]
-    
     if any(sig in tlow for sig in english_signals) or (ents.get("program") and any(sig in ents["program"].lower() for sig in english_signals)):
         head_name = "the Department Head"
         dept = next((d for d in departments if d["department_id"] == "D-LL"), None)
         if dept and dept.get("department_head"):
-             head_name = dept.get("department_head")
-        
+            head_name = dept.get("department_head")
         return (
             f"I don't have the official maximum number of units for **BA in English Language**, "
             "and I haven't been given the curriculum data to show you the usual breakdown yet.\n\n"
@@ -274,7 +274,6 @@ def handle_max_units(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
 
     prog_query = ents.get("program") or user_text
     res = get_program_head(programs, departments, prog_query)
-    
     if not res:
         return (
             "I'm not sure which program you're asking about regarding maximum units. "
@@ -283,7 +282,6 @@ def handle_max_units(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
         )
 
     pname, head_name = res
-    
     if not _is_supported_program(pname):
         return (
              f"I don't have the official maximum number of units for {pname}. "
@@ -296,7 +294,6 @@ def handle_max_units(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
         f"What I can show you instead is the usual total units for {pname} and how they're split per trimester.",
         ""
     ]
-    
     if head_name:
         lines.append(
             f"For official rules about maximum loads or overloads, it's best to check with the department head, {head_name}."
@@ -344,10 +341,14 @@ def _extract_name(text: str) -> Optional[str]:
 
 def _looks_like_question(text: str) -> bool:
     t = (text or "").strip().lower()
-    if "?" in t: return True
-    if any(t.startswith(w) for w in ["who", "what", "how", "where", "when"]): return True
-    if any(k in t for k in ["units", "prereq", "prerequisite", "department", "dept", "head", "program", "year", "semester", "course", "dean"]): return True
-    if CODE_RE.search(t): return True
+    if "?" in t:
+        return True
+    if any(t.startswith(w) for w in ["who", "what", "how", "where", "when"]):
+        return True
+    if any(k in t for k in ["units", "prereq", "prerequisite", "department", "dept", "head", "program", "year", "semester", "course", "dean"]):
+        return True
+    if CODE_RE.search(t):
+        return True
     return False
 
 
@@ -468,7 +469,6 @@ def _build_nstp_overview() -> str:
             )
     else:
         lines.append("• NSTP 2 – prerequisite: NSTP 1.")
-    
     lines.append("")
     return "\n".join(lines)
 
@@ -523,7 +523,6 @@ def _build_pathfit_overview() -> str:
         else:
             prereq_list = ", ".join(format_course_name_then_code(p) for p in needed)
             lines.append(f"• {name_code} – prerequisites: {prereq_list}.")
-    
     return "\n".join(lines)
 
 
@@ -551,7 +550,8 @@ def _build_thesis_overview() -> str:
         cid = (entry.get("course_id") or "").strip().upper()
         if cid in thesis_codes:
             pid = entry.get("program_id")
-            if not pid: continue
+            if not pid:
+                continue
             course_programs.setdefault(cid, set()).add(pid)
 
     lines: list[str] = [
@@ -562,17 +562,21 @@ def _build_thesis_overview() -> str:
     def _sorted_thesis_for_program(pid: str) -> list[dict]:
         rows = []
         for entry in plan:
-            if entry.get("program_id") != pid: continue
+            if entry.get("program_id") != pid:
+                continue
             cid = (entry.get("course_id") or "").strip().upper()
-            if cid not in thesis_codes: continue
+            if cid not in thesis_codes:
+                continue
             rows.append((int(entry.get("year_level") or 0), int(entry.get("term") or 0), cid))
         seen = set()
         ordered: list[dict] = []
         for year, term, cid in sorted(rows):
-            if cid in seen: continue
+            if cid in seen:
+                continue
             seen.add(cid)
             course = thesis_courses_by_code.get(cid)
-            if course: ordered.append(course)
+            if course:
+                ordered.append(course)
         return ordered
 
     any_output = False
@@ -580,7 +584,8 @@ def _build_thesis_overview() -> str:
         pid = prog.get("program_id")
         pname = prog.get("program_name") or ""
         thesis_for_prog = _sorted_thesis_for_program(pid)
-        if not thesis_for_prog: continue
+        if not thesis_for_prog:
+            continue
         any_output = True
         lines.append("")
         lines.append(f"For {pname}, the thesis courses are:")
@@ -612,7 +617,6 @@ def _build_thesis_overview() -> str:
 
     if not any_output:
         return "I see thesis courses in the data, but they aren't currently mapped to any CAS program in my records."
-    
     lines.append("")
     return "\n".join(lines)
 
@@ -621,21 +625,24 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
     courses = data["courses"]
     prereqs = data["prereqs"]
 
-    if _is_generic_thesis_query(user_text): return (_build_thesis_overview(), OFFICIAL_SOURCE)
-    if _is_generic_nstp_query(user_text): return (_build_nstp_overview(), OFFICIAL_SOURCE)
-    if _is_generic_pathfit_query(user_text): return (_build_pathfit_overview(), OFFICIAL_SOURCE)
+    if _is_generic_thesis_query(user_text):
+        return (_build_thesis_overview(), OFFICIAL_SOURCE)
+    if _is_generic_nstp_query(user_text):
+        return (_build_nstp_overview(), OFFICIAL_SOURCE)
+    if _is_generic_pathfit_query(user_text):
+        return (_build_pathfit_overview(), OFFICIAL_SOURCE)
 
     course = course_obj
-    
     if not course:
         if ents.get("course_code"):
             course, _ = find_course_any(data, ents["course_code"])
             if not course:
-                 return (f"I see you mentioned '{ents['course_code']}', but I can't find a course with that code. Mind checking the spelling?", None)
+                return (f"I see you mentioned '{ents['course_code']}', but I can't find a course with that code. Mind checking the spelling?", None)
 
         if not course and ents.get("course_title"):
             fb = fuzzy_best_course_title(courses, ents["course_title"], score_cutoff=70)
-            if fb: course = fb[2]
+            if fb:
+                course = fb[2]
 
         if not course and not ents.get("course_code"):
             course, _ = find_course_any(data, user_text)
@@ -669,7 +676,6 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
 
     needed = get_prerequisites(prereqs, courses, course.get("course_id"))
     heading = format_course_name_then_code(course)
-    
     is_yes_no = any(user_text.lower().strip().startswith(x) for x in ["does", "do", "is", "are", "can", "could"])
 
     lines = []
@@ -707,7 +713,6 @@ def handle_prereq(user_text: str, ents: dict, course_obj: Optional[dict] = None)
         else:
             lines.append("Just so you know: English Review (IENG) and Math Review (IMAT) depend on your diagnostic test results.")
         lines.append("You can check with the Guidance Office via their Facebook page https://www.facebook.com/NWUGuidance.")
-    
     lines.append(f"")
     return ("\n".join(lines), OFFICIAL_SOURCE)
 
@@ -736,16 +741,13 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
             "Your best bet is to ask the department head or the CAS Dean's office directly—they'll have the most up-to-date info!",
             None
         )
-    
     stops = {
-        "units", "unit", "credit", "load", "what", "is", "are", "the", 
-        "how", "many", "of", "for", "in", "does", "do", "a", "an", 
+        "units", "unit", "credit", "load", "what", "is", "are", "the",
+        "how", "many", "of", "for", "in", "does", "do", "a", "an",
         "subject", "course", "about"
     }
-    
     meaningful = [t for t in tokens if t not in stops]
     course_candidate = course_obj
-    
     if not course_candidate and meaningful:
         course_candidate, _ = find_course_any(data, user_text)
 
@@ -754,24 +756,28 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
         if c_code == "IENG":
             is_explicit = any(k in tlow for k in ["review", "ieng", "diagnostic", "placement"])
             if not is_explicit and "english" in tlow:
-                 return ("I'm a bit lost. Could you tell me exactly what you need in one sentence? Mention the course code or program and whether you need units, prerequisites, or the curriculum.", None)
+                return ("I'm a bit lost. Could you tell me exactly what you need in one sentence? Mention the course code or program and whether you need units, prerequisites, or the curriculum.", None)
 
-    if course_candidate:
+    is_program_query = ents.get("program") is not None
+    has_year_keyword = bool(re.search(r"\b(year|yr|sem|trimester)\b", tlow))
+    
+    if course_candidate and not (is_program_query and has_year_keyword):
         has_number = bool(re.search(r"\d", user_text))
         is_title_match = course_candidate.get("course_title", "").lower() in tlow
         
-        if course_candidate and (has_number or not ents.get("program") or is_title_match):
+        if has_number or not ents.get("program") or is_title_match:
              u_str = _format_units(course_candidate.get('units', 'NA'))
              return (f"{format_course(course_candidate)} — {u_str}. ", OFFICIAL_SOURCE)
 
     prog_row = None
     if ents.get("program"):
         res = fuzzy_best_program(programs, ents["program"], score_cutoff=60)
-        if res: _, _, prog_row = res
-    
+        if res:
+            _, _, prog_row = res
     if not prog_row:
         res = fuzzy_best_program(programs, user_text, score_cutoff=80)
-        if res: _, _, prog_row = res
+        if res:
+            _, _, prog_row = res
 
     if prog_row:
         pid = prog_row["program_id"]
@@ -894,7 +900,6 @@ def handle_units(user_text: str, ents: dict, course_obj: Optional[dict] = None) 
         "Which program are you interested in?",
         None
     )
-
 
 def handle_curriculum(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
     programs = data["programs"]
@@ -1159,10 +1164,15 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
     
     c, match_type = find_course_any(data, user_text)
     
+    if intent == "when_taken":
+        if c and match_type in ("code", "exact_title", "exact_title_subset", "alias"):
+             return handle_when_taken(user_text, ents, course_obj=c)
+        else:
+             return handle_when_taken(user_text, ents, course_obj=None)
+
     if c and match_type in ("code", "exact_title", "exact_title_subset", "alias"):
         if has_units: return handle_units(user_text, ents, course_obj=c)
         if has_prereq: return handle_prereq(user_text, ents, course_obj=c)
-        if intent == "when_taken": return handle_when_taken(user_text, ents, course_obj=c)
         return (
             f"I found **{format_course(c)}**.\n\n"
             "What do you need? I can check its **units**, **prerequisites**, "
@@ -1185,9 +1195,6 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
 
     if _is_generic_thesis_query(user_text) or _is_generic_nstp_query(user_text) or _is_generic_pathfit_query(user_text):
         return handle_prereq(user_text, ents)
-    if intent == "when_taken":
-        return handle_when_taken(user_text, ents, course_obj=c)
-
 
     strong_intent = intent in {"units", "prerequisites", "curriculum", "max_units"}
     
@@ -1284,8 +1291,10 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
                 diff = hits[0][1] - hits[1][1]
                 if diff >= 15:
                     is_clear_winner = True
+            
             if c and (match_type in ("code", "exact_title", "exact_title_subset", "alias")) and intent == "when_taken":
                 return handle_when_taken(user_text, ents, course_obj=c)
+                
             if is_clear_winner:
                 c = hits[0][2]
                 if has_units or intent == "units": return handle_units(user_text, ents, course_obj=c)
@@ -1315,7 +1324,6 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
         "BS Biology subjects or Prerequisite of Purposive Communication.",
         None
     )
-
 
 placeholder = "Say hello, share your name, or ask about prerequisites, unit loads, or department leadership…"
 prompt = st.chat_input(placeholder)

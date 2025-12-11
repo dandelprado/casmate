@@ -20,6 +20,7 @@ except ImportError:
     print("❌ Error: Could not import 'app.py'.")
     sys.exit(1)
 
+
 def run_tests():
     print("==========================================================")
     print("CASmate Comprehensive Unit Tests (Fixed & Adjusted)")
@@ -58,7 +59,7 @@ def run_tests():
             "input": "political science 4th year subjects",
             "should_contain": ["3-year trimester", "Registrar"],
             "should_not_contain": ["I found a few courses", "PS 101"],
-            "expect_source": False, # No data found
+            "expect_source": False,
             "desc": "4th Year Missing Data Handling"
         },
         {
@@ -101,7 +102,6 @@ def run_tests():
         {"cat": "Curriculum", "input": "1st year cs subjects", "should_contain": ["CC 111"], "expect_source": True, "desc": "CS Year 1"},
         {"cat": "Curriculum", "input": "2nd year cs subjects", "should_contain": ["CS 211"], "expect_source": True, "desc": "CS Year 2"},
         {"cat": "Curriculum", "input": "3rd year cs subjects", "should_contain": ["Software Engineering"], "expect_source": True, "desc": "CS Year 3"},
-        
         # BIO
         {"cat": "Curriculum", "input": "1st year bio subjects", "should_contain": ["General Zoology"], "expect_source": True, "desc": "BIO Year 1"},
         {"cat": "Curriculum", "input": "2nd year bio subjects", "should_contain": ["Microbiology"], "expect_source": True, "desc": "BIO Year 2"},
@@ -327,7 +327,6 @@ def run_tests():
             "expect_source": True,
             "desc": "POLS Year 3 Units"
         },
-        # UPDATED TEST 44: Allow "Prerequisites" plural
         {
             "cat": "POLS-Expanded",
             "input": "prereq of Philippine Public Administration",
@@ -360,17 +359,15 @@ def run_tests():
             "expect_source": True,
             "desc": "COMM Year 2 Units"
         },
-        # UPDATED TEST 48 (WAS 52): Expect Direct Answer instead of clarification
         {
             "cat": "COMM-Expanded",
             "input": "prereq of Advertising Principles",
             "should_contain": ["Advertising Principles and Practice", "no listed prerequisites"],
-            "expect_source": True, # Direct answer has source
+            "expect_source": True,
             "desc": "COMM Course Prereq Check (Direct Match)"
         },
 
         # --- 8.6 SPECIAL LOGIC: DIAGNOSTIC/THESIS/PATHFIT ---
-        # UPDATED TEST 49: Expect long string
         {
             "cat": "SpecialLogic",
             "input": "prereq of IENG",
@@ -378,7 +375,6 @@ def run_tests():
             "expect_source": None,
             "desc": "Diagnostic Course Logic (IENG)"
         },
-        # UPDATED TEST 50: Expect long string
         {
             "cat": "SpecialLogic",
             "input": "prereq of IMAT",
@@ -519,7 +515,7 @@ def run_tests():
         {
             "cat": "WhenTaken",
             "input": "What year do I take Microbiology?",
-            "should_contain": ["In **Bachelor of Science in Biology**", "Microbiology", "normally taken in **Second year**"],
+            "should_contain": ["In **Bachelor of Science in Biology**", "Microbiology", "normally taken in **Second Year**"],
             "expect_source": True,
             "desc": "When taken - Unique course (Bio)"
         },
@@ -558,35 +554,103 @@ def run_tests():
             "expect_source": True,
             "desc": "When taken - Course not in specified program"
         },
-
+        # ==============================================================================
+        # SECTION 11: EXPANDED WHEN-TAKEN PATTERNS & ALIASES
+        # ==============================================================================
+        {
+            "cat": "WhenTaken-Pattern",
+            "input": "When should I take Data Structures?",
+            "should_contain": ["In **Bachelor of Science in Computer Science**", "Data Structures and Algorithm", "normally taken in **First Year**"],
+            "expect_source": True,
+            "desc": "Pattern: 'When should I take' + Alias 'Data Structures'"
+        },
+        {
+            "cat": "WhenTaken-Pattern",
+            "input": "What Year is Advertising Principles?",
+            "should_contain": ["In **Bachelor of Arts in Communication**", "Advertising Principles and Practice", "normally taken in **Second Year**"],
+            "expect_source": True,
+            "desc": "Pattern: 'What Year is' + Alias 'Advertising Principles'"
+        },
+        {
+            "cat": "WhenTaken-Pattern",
+            "input": "When do we take introduction to computing?",
+            "should_contain": ["Bachelor of Science in Computer Science", "Introduction to Computing", "First Year"],
+            "expect_source": True,
+            "desc": "Pattern: 'When do we take' + Full Title (lowercase)"
+        },
+        {
+            "cat": "WhenTaken-Pattern",
+            "input": "In what Year is Fundamentals of Political Science usually taken?",
+            "should_contain": ["Bachelor of Arts in Political Science", "First Year"],
+            "expect_source": True,
+            "desc": "Pattern: 'In what Year is... usually taken'"
+        },
+        {
+            "cat": "WhenTaken-Capitalization",
+            "input": "When do I take Microbiology?",
+            "should_contain": ["Second Year"],
+            "expect_source": True,
+            "desc": "Strict Capitalization Check (Second Year)"
+        },
+        {
+            "cat": "WhenTaken-Capitalization",
+            "input": "What Year do I take Gen Zoology?",
+            "should_contain": ["First Year"],
+            "expect_source": True,
+            "desc": "Strict Capitalization Check (First Year) + fuzzy title"
+        },
+        # ==============================================================================
+        # SECTION 12: NEW TESTS FOR ROBUSTNESS
+        # ==============================================================================
+        {
+            "cat": "NewCoverage",
+            "input": "When is intro to computing taken?",
+            "should_contain": ["First Year", "Computer Science"],
+            "expect_source": True,
+            "desc": "Alias 'intro to computing' check"
+        },
+        {
+            "cat": "NewCoverage",
+            "input": "prereq of general zoology",
+            "should_contain": ["General Zoology", "no listed prerequisites"],
+            "expect_source": True,
+            "desc": "Explicit full title 'general zoology'"
+        },
+        {
+            "cat": "NewCoverage",
+            "input": "prereq of gen zoo",
+            "should_contain": ["General Zoology", "no listed prerequisites"],
+            "expect_source": True,
+            "desc": "Short alias 'gen zoo' check (matches gen zoology alias)"
+        },
+        {
+            "cat": "NewCoverage",
+            "input": "units for botany",
+            "should_contain": ["General Botany", "units"],
+            "expect_source": True,
+            "desc": "Single word alias 'botany'"
+        }
     ]
-
     passed_count = 0
     total_count = len(test_cases)
-    
     for i, t in enumerate(test_cases, 1):
         print(f"Test {i}: [{t['cat']}] {t['desc']}")
         print(f"Query: '{t['input']}'")
-        
         try:
             st.session_state.awaiting_dept_scope = False
             st.session_state.awaiting_college_scope = False
             st.session_state.pending_intent = None
-            
             result = route(t['input'])
-            
             if isinstance(result, tuple):
                 response_text, response_source = result
             else:
                 response_text = result
                 response_source = None
-                
         except Exception as e:
             print(f"❌ ERROR: {e}")
             continue
 
         failures = []
-        
         for phrase in t.get('should_contain', []):
             if phrase.lower() not in response_text.lower():
                 failures.append(f"Missing text: '{phrase}'")
@@ -594,14 +658,13 @@ def run_tests():
         for phrase in t.get('should_not_contain', []):
             if phrase.lower() in response_text.lower():
                 failures.append(f"Forbidden text: '{phrase}'")
-        
         expects_source = t.get('expect_source', False)
         if expects_source:
             if response_source != OFFICIAL_SOURCE:
                 failures.append(f"Missing Official Source. Got: {response_source}")
         elif expects_source is False:
             if response_source is not None:
-                 failures.append(f"Unexpected Source attached. Expected None, got: {response_source}")
+                failures.append(f"Unexpected Source attached. Expected None, got: {response_source}")
 
         if not failures:
             print("✅ PASS")
@@ -612,10 +675,10 @@ def run_tests():
                 print(f"   - {f}")
             print(f"   Actual Text: {response_text[:150]}...")
             print(f"   Actual Source: {response_source}")
-        
         print("-" * 60)
 
     print(f"\nResult: {passed_count}/{total_count} tests passed.")
+
 
 if __name__ == "__main__":
     run_tests()

@@ -90,9 +90,16 @@ COURSE_ALIASES = {
     "data structures": "Data Structures and Algorithm",
     "data structure": "Data Structures and Algorithm",
     "math modern world": "Mathematics in the Modern World",
-    "mathematics modern world": "Mathematics in the Modern World"
+    "mathematics modern world": "Mathematics in the Modern World",
+    "advertising principle": "Advertising Principles and Practice",
+    "advertising principles": "Advertising Principles and Practice",
+    "gen zoology": "General Zoology",
+    "general zoology": "General Zoology",
+    "gen zoo": "General Zoology",
+    "microbio": "Microbiology",
+    "botany": "General Botany",
+    "zoology": "General Zoology"
 }
-
 
 def _normalize_phrase(s: str) -> str:
     t = (s or "").lower()
@@ -118,10 +125,13 @@ def _clean_course_query(text: str) -> str:
         "requirement", "requirements",
         "about", "regarding", "do", "does", "should",
         "need", "take", "before", "prior",
-        "how", "many", "unit", "units", "load", "total", "there"
+        "how", "many", "unit", "units", "load", "total", "there",
+        "i", "we", "my", "students", "student",
+        "when", "where", "which", "year", "yr", "level", "sem", "semester", "trimester", "term"
     }
     kept = [t for t in tokens if t not in remove and not t.startswith("prereq") and not t.startswith("requirement")]
     return " ".join(kept) if kept else base
+
 
 def get_course_curriculum_entries(plan: List[Dict], course_id: str) -> List[Dict]:
     if not course_id:
