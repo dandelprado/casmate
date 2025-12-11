@@ -796,7 +796,53 @@ def run_tests():
             "should_contain": ["need to know which program"],
             "expect_source": None,
             "desc": "Missing Program Prompt"
-        }
+        },
+
+        # ==============================================================================
+        # SECTION 15: MAJOR / MINOR / NON-MAJOR QUERIES
+        # ==============================================================================
+        {
+            "cat": "MajorMinor",
+            "input": "What are the major subjects for 1st year Computer Science?",
+            "should_contain": [
+                "doesn't tag each subject as major or minor",
+                "check with PROF. RC",
+                "I can show you the usual subjects"
+            ],
+            "should_not_contain": ["Here are the major subjects"],
+            "expect_source": None,
+            "desc": "Major Subjects - Supported Program (CS)"
+        },
+        {
+            "cat": "MajorMinor",
+            "input": "minor subjects for BA English Language",
+            "should_contain": [
+                "don't have the official BA in English Language",
+                "check with the Language and Literature department head, DR. JV"
+            ],
+            "expect_source": None,
+            "desc": "Minor Subjects - Unsupported Program (BAEL)"
+        },
+        {
+            "cat": "MajorMinor",
+            "input": "non-major subjects for 4th year psychology",
+            "should_contain": [
+                "data only goes up to 3rd year",
+                "trimester setup",
+                "DR. PV"
+            ],
+            "expect_source": None,
+            "desc": "Non-Major Subjects - 4th Year Boundary Check"
+        },
+        {
+            "cat": "MajorMinor",
+            "input": "what are the non-minor subjects?",
+            "should_contain": [
+                "I can help more once I know your program"
+            ],
+            "expect_source": None,
+            "desc": "Major/Minor - Missing Program"
+        },
 
 
         ]

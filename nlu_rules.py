@@ -138,6 +138,21 @@ add_lower_in("INTENT_GREET", ["hi", "hello", "hey"])
 add_lower_in("INTENT_GOODBYE", ["bye", "goodbye", "thanks", "thank", "tnx"])
 
 matcher.add(
+    "INTENT_MAJOR_MINOR",
+    [
+        [{"LOWER": "major"}, {"LOWER": "subjects"}],
+        [{"LOWER": "minor"}, {"LOWER": "subjects"}],
+        [{"LOWER": "non"}, {"LOWER": "major"}],
+        [{"LOWER": "non-major"}],
+        [{"LOWER": "non"}, {"LOWER": "minor"}],
+        [{"LOWER": "non-minor"}],
+        [{"LOWER": "majors"}],
+        [{"LOWER": "minors"}],
+        [{"LOWER": "what"}, {"LOWER": "are"}, {"LOWER": "the"}, {"LOWER": "majors"}],
+    ],
+)
+
+matcher.add(
     "INTENT_PREREQ",
     [
         [{"LOWER": {"IN": ["prereq", "prereqs", "prerequisite", "prerequisites", "requirement", "requirements"]}}],
@@ -281,6 +296,8 @@ def detect_intent(text: str) -> str:
         "dept head" in tlow or "department head" in tlow or "who's the" in tlow
     ):
         return "dept_head_one"
+    if "INTENT_MAJOR_MINOR" in labels or any(x in tlow for x in ["major", "minor", "non-major", "non-minor"]):
+        return "major_minor_subjects"
 
     if "INTENT_LAB_SUBJECTS" in labels or "lab" in tlow or "laboratory" in tlow:
         return "lab_subjects"

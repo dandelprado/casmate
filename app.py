@@ -1301,6 +1301,54 @@ def resolve_pending(user_text: str) -> Optional[Tuple[str, Optional[str]]]:
         return ("Thanks. Please specify a college.", None)
     return None
 
+def handle_major_minor_inquiry(user_text: str, ents: dict) -> Tuple[str, Optional[str]]:
+    programs = data["programs"]
+    departments = data["departments"]
+    tlow = (user_text or "").lower()
+
+    english_signals = ["english language", "ab english", "ba english", "ba in english", "ab in english", "abel", "bael"]
+    if any(sig in tlow for sig in english_signals) or (ents.get("program") and any(sig in ents["program"].lower() for sig in english_signals)):
+        head_name = "the Department Head"
+        dept = next((d for d in departments if d["department_id"] == "D-LL"), None)
+        if dept and dept.get("department_head"):
+            head_name = dept.get("department_head")
+        
+        return (
+            "I'm still learning and I don't have the official BA in English Language curriculum in my data yet, "
+            "so I can't show which subjects are majors or non-majors.\n\n"
+            f"For the official breakdown, it's best to check with the Language and Literature department head, {head_name}.",
+            None
+        )
+
+    prog_query = ents.get("program") or user_text
+    res = get_program_head(programs, departments, prog_query)
+    
+    if not res:
+        return (
+            "I can help more once I know your program. Are you in BS Computer Science, "
+            "BS Biology, BS Psychology, BA Political Science, or BA Communication?",
+            None
+        )
+
+    pname, head_name = res
+
+    target_year = ents.get("year_num")
+    if target_year and target_year > 3:
+        return (
+            "CAS programs are designed to be taken in 3 academic years under a trimester setup, so my data only goes up to 3rd year.\n\n"
+            f"If you're looking for advanced {pname} subjects, please double-check with your department head, {head_name} or the Registrar.",
+            None
+        )
+
+    display_head = head_name if head_name else "your Department Head"
+    
+    return (
+        "I'm still learning and the curriculum data I have doesn't tag each subject as major or minor specifically.\n\n"
+        f"However, I can show you the usual subjects per year and trimester for {pname} if you like! "
+        f"For the official list of which subjects are treated as majors or non-majors, it's best to double-check with {display_head}.",
+        None
+    )
+
 
 def route(user_text: str) -> Tuple[str, Optional[str]]:
     if st.session_state.awaiting_dept_scope or st.session_state.awaiting_college_scope:
@@ -1381,6 +1429,8 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
     if intent == "dept_head_one": return handle_dept_head_one(user_text, ents)
     if intent == "max_units":
         return handle_max_units(user_text, ents)
+    if intent == "major_minor_subjects":
+        return handle_major_minor_inquiry(user_text, ents)
 
     plain = tlow
     nonnames = {"yes", "yeah", "yup", "ok", "okay", "sure", "thanks", "thank you"}
