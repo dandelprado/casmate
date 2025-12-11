@@ -680,39 +680,128 @@ def run_tests():
         },
 
         # ==============================================================================
-        # SECTION 14: LAB SUBJECTS WITH UNITS
+        # SECTION 14: COMPREHENSIVE LAB SUBJECTS TESTS
         # ==============================================================================
+        
+        # --- 14.1 Computer Science ---
         {
-            "cat": "Labs-Units",
+            "cat": "Labs-CS",
             "input": "1st year computer science lab subjects",
             "should_contain": [
                 "3 units (2 lec / 1 lab)", 
-                "Total lab units for First Year"
+                "Total units for these lab subjects",
+                "includes the lecture component"
             ],
             "expect_source": True,
-            "desc": "CS Year 1 Lab Units (Breakdown & Total)"
+            "desc": "CS Year 1 Labs (Specific Year - Breakdown & Total)"
         },
         {
-            "cat": "Labs-Units",
-            "input": "2nd year biology lab subjects",
+            "cat": "Labs-CS",
+            "input": "computer science lab subjects",
             "should_contain": [
-                "5 units (3 lec / 2 lab)",
-                "Total lab units for Second Year"
+                "Total units for First Year lab subjects",
+                "Total units for Second Year lab subjects",
+                "Total units for Third Year lab subjects",
+                "3 units (2 lec / 1 lab)"
+            ],
+            "should_not_contain": ["Tip: If you want a shorter list"],
+            "expect_source": True,
+            "desc": "CS All Labs (Grouped View - Totals per year)"
+        },
+
+        # --- 14.2 Biology ---
+        {
+            "cat": "Labs-Bio",
+            "input": "lab subjects for biology",
+            "should_contain": [
+                "Total units for First Year lab subjects",
+                "Total units for Second Year lab subjects",
+                "Total units for Third Year lab subjects",
+                "5 units (3 lec / 2 lab)" # BIO 103 check
             ],
             "expect_source": True,
-            "desc": "Bio Year 2 Lab Units (5-unit course check)"
+            "desc": "Bio All Labs (Grouped View - Unit Logic)"
+        },
+
+        # --- 14.3 Psychology ---
+        {
+            "cat": "Labs-Psych",
+            "input": "psychology lab subjects 2nd year",
+            "should_contain": [
+                "Bachelor of Science in Psychology",
+                "Total units for these lab subjects",
+                "Experimental Psychology",
+                "5 units (3 lec / 2 lab)"
+            ],
+            "expect_source": True,
+            "desc": "Psych Year 2 Labs (Specific Year)"
+        },
+
+        # --- 14.4 Political Science ---
+        {
+            "cat": "Labs-PolSci",
+            "input": "lab subjects for political science",
+            "should_contain": [
+                "Multimedia (IMM L)",
+                "Total units for Second Year lab subjects: 1"
+            ],
+            "expect_source": True,
+            "desc": "PolSci All Labs (Sparse - Correct Total)"
         },
         {
-            "cat": "Labs-Units",
+            "cat": "Labs-PolSci",
+            "input": "3rd year pol sci lab subjects",
+            "should_contain": ["Bachelor of Arts in Political Science", "don't see any lab subjects listed"],
+            "should_not_contain": ["Computer Science", "CS"],
+            "expect_source": True,
+            "desc": "PolSci Year 3 Labs (Empty Year Check)"
+        },
+
+        # --- 14.5 Communication ---
+        {
+            "cat": "Labs-Comm",
             "input": "lab subjects for communication",
             "should_contain": [
-                "1 unit",
-                "Multimedia (IMM L)"
+                "Multimedia (IMM L)",
+                "1 unit"
             ],
             "expect_source": True,
-            "desc": "Comm Labs Unit Formatting (1 unit singular check)"
+            "desc": "Comm All Labs (Single unit formatting)"
+        },
+
+        # --- 14.6 Error Handling ---
+        {
+            "cat": "Labs-Error",
+            "input": "4th year cs lab subjects",
+            "should_contain": [
+                "3-year trimester courses", 
+                "don't have any subjects listed for a 4th year"
+            ],
+            "expect_source": None,
+            "desc": "4th Year Lab Fallback (Natural phrasing)"
+        },
+        {
+            "cat": "Labs-Error",
+            "input": "5th year biology lab subjects",
+            "should_contain": [
+                "3-year trimester courses", 
+                "don't have any subjects listed for a 5th year"
+            ],
+            "expect_source": None,
+            "desc": "5th Year Lab Fallback (Natural phrasing)"
+        },
+        {
+            "cat": "Labs-Error",
+            "input": "lab subjects",
+            "should_contain": ["need to know which program"],
+            "expect_source": None,
+            "desc": "Missing Program Prompt"
         }
-    ]
+
+
+        ]
+
+
     passed_count = 0
     total_count = len(test_cases)
     for i, t in enumerate(test_cases, 1):

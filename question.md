@@ -79,3 +79,20 @@ Some examples I can help with are BS Computer Science, BS Psychology, or BA Comm
 Which program are you interested in?
 
 I think, this should be answered with the multiple course fallback. Since there is fundamentals of discrete and advanced discrete structures
+
+4. BS Computer science
+I found MATH 212 — Calculus for Computer Science.
+
+What do you need? I can check its units, prerequisites, or verify if it's in your curriculum. 
+
+5. BS Psychology
+
+I found a few courses with similar names. Could you type the specific course code or full title you need? Here are the ones I see:
+• PSYCH 101 — Introduction to Psychology
+• PSYCH 112 — Social Psychology
+• PSYCH 108 — Abnormal Psychology
+• PSYCH 113 — Cognitive Psychology
+• PSYCH 105 L/L — Experimental Psychology
+• PSYCH 104 — Developmental Psychology
+
+6. 

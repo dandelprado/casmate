@@ -240,9 +240,13 @@ def handle_lab_subjects(user_text: str, ents: dict) -> Tuple[str, Optional[str]]
 
     if target_year:
         if target_year > 3:
+            suffix = "th"
+            if target_year % 10 == 1 and target_year != 11: suffix = "st"
+            elif target_year % 10 == 2 and target_year != 12: suffix = "nd"
+            elif target_year % 10 == 3 and target_year != 13: suffix = "rd"
+            
             return (
-                f"I can only show lab subjects for years 1 to 3 in {pname}. "
-                "For 4th year subjects, please check with the department head.",
+                f"Since CAS programs are 3-year trimester courses, I don't have any subjects listed for a {target_year}{suffix} year.",
                 None
             )
             
@@ -263,7 +267,7 @@ def handle_lab_subjects(user_text: str, ents: dict) -> Tuple[str, Optional[str]]
                 term_units += u_val
             
             lines.append(f"\n**Total units for these lab subjects: {term_units}**")
-            lines.append("(These courses have a laboratory component.)")
+            lines.append("(Note: The total includes the lecture component unless it is a standalone lab course.)")
             return ("\n".join(lines), OFFICIAL_SOURCE)
         
         else:
@@ -286,7 +290,8 @@ def handle_lab_subjects(user_text: str, ents: dict) -> Tuple[str, Optional[str]]
             if not found_any:
                 return (f"I checked the curriculum for **{_friendly_year(target_year)}** {pname}, and I don't see any lab subjects listed.", OFFICIAL_SOURCE)
             
-            lines.append(f"\n**Total lab units for {_friendly_year(target_year)}: {year_units}**")
+            lines.append(f"\n**Total units for these lab subjects: {year_units}**")
+            lines.append("(Note: The total includes the lecture component unless it is a standalone lab course.)")
             return ("\n".join(lines), OFFICIAL_SOURCE)
 
     lines = [
@@ -296,6 +301,7 @@ def handle_lab_subjects(user_text: str, ents: dict) -> Tuple[str, Optional[str]]
     found_any_global = False
     for y in [1, 2, 3]:
         year_labs_exist = False
+        year_units = 0
         year_buffer = [f"\n**{_friendly_year(y)}**"]
         
         for t in [1, 2, 3]:
@@ -307,17 +313,20 @@ def handle_lab_subjects(user_text: str, ents: dict) -> Tuple[str, Optional[str]]
                 for c in labs:
                     clean_code = _format_lab_code(c.get("course_code") or "")
                     title = c.get("course_title")
-                    u_str, _ = _format_units_display(c)
+                    u_str, u_val = _format_units_display(c)
                     year_buffer.append(f"• {title} ({clean_code}) — {u_str}")
+                    year_units += u_val
         
         if year_labs_exist:
+            year_buffer.append(f"\n**Total units for {_friendly_year(y)} lab subjects: {year_units}**")
             lines.extend(year_buffer)
 
     if not found_any_global:
-        return (f"I couldn't find any laboratory subjects listed for {pname} in the current dataset.", OFFICIAL_SOURCE)
+        return (f"I checked the curriculum for **{pname}** and I don't see any lab subjects listed.", OFFICIAL_SOURCE)
 
-    lines.append("\n(Tip: If you want a shorter list with total units, you can ask things like '1st year CS lab subjects'!)")
+    lines.append("\n(Note: The totals include the lecture component unless it is a standalone lab course.)")
     return ("\n".join(lines), OFFICIAL_SOURCE)
+
 
 def handle_when_taken(user_text: str, ents: dict, course_obj: Optional[dict] = None) -> Tuple[str, Optional[str]]:
     plan = data["plan"]

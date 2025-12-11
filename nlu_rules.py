@@ -25,6 +25,7 @@ PROGRAM_CANON = {
 
     "POLSAY": "BA in Political Science",
     "POLSCI": "BA in Political Science",
+    "POL SCI": "BA in Political Science",
     "AB POLSCI": "BA in Political Science",
     "AB PS": "BA in Political Science",
     "ABPS": "BA in Political Science",
@@ -51,6 +52,7 @@ PROGRAM_CANON = {
     "BIOLOGY": "BS in Biology",
     "BS BIOLOGY": "BS in Biology",
 }
+
 
 def norm_key(s: str) -> str:
     return "".join(s or "").strip().upper()
