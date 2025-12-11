@@ -60,3 +60,22 @@ is there a prereq for subjects
 
 # Issue 
 
+is there a prereq for medical microbiology? 
+
+- it gave incorrect answer. it detected microbiology, instead of the medical microbiology.
+
+2. is there a prereq for fundamentals of discrete structures?
+I found a few courses with similar names. Could you type the specific course code or full title you need? Here are the ones I see:
+• CS 121 — Fundamentals of Discrete Structures
+• CC 131 — Advanced Discrete Structures
+
+- gave the following answer despite being clear about the subject needed.
+
+3. is discrete structure in the curriculum?
+I'm not quite sure which program you mean.
+
+Some examples I can help with are BS Computer Science, BS Psychology, or BA Communication.
+
+Which program are you interested in?
+
+I think, this should be answered with the multiple course fallback. Since there is fundamentals of discrete and advanced discrete structures

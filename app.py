@@ -25,7 +25,8 @@ from data_api import (
     get_dept_role_label,
     get_cas_dean,
     get_program_head,
-    _clean_course_query
+    _clean_course_query,
+    get_course_curriculum_entries
 )
 from nlu_rules import (
     build_gazetteers,
@@ -154,7 +155,97 @@ def _is_dept_headish(text: str) -> bool:
     fuzzy_head = fuzz.partial_ratio(t, "head") >= 80
     return (dept_like or fuzzy_dept) and (head_like or fuzzy_head)
 
+def _friendly_year(y: int) -> str:
+    return {1: "First year", 2: "Second year", 3: "Third year", 4: "Fourth year"}.get(int(y), f"Year {y}")
 
+def _friendly_term(t: int) -> str:
+    return {1: "First Trimester", 2: "Second Trimester", 3: "Third Trimester"}.get(int(t), f"Term {t}")
+
+def handle_when_taken(user_text: str, ents: dict, course_obj: Optional[dict] = None) -> Tuple[str, Optional[str]]:
+    plan = data["plan"]
+    courses = data["courses"]
+    programs = data["programs"]
+
+    course = course_obj
+    if not course:
+        course, _ = find_course_any(data, user_text)
+    
+    if not course:
+        if ents.get("course_code"):
+            course, _ = find_course_any(data, ents["course_code"])
+        elif ents.get("course_title"):
+            fb = fuzzy_best_course_title(courses, ents["course_title"])
+            if fb: course = fb[2]
+
+    if not course:
+        return (
+            "I'm not sure which course you're asking about. "
+            "Could you double-check the course name or code? "
+            "(e.g., 'When do I take Microbiology?' or 'What year is CC 111?')",
+            None
+        )
+
+    cid = course.get("course_id")
+    cname = format_course_name_then_code(course)
+    
+    entries = get_course_curriculum_entries(plan, cid)
+    
+    if not entries:
+         return (
+            f"I found **{cname}** in the course list, but it doesn't seem to be mapped "
+            "to any specific year level in the CAS curriculum data I have right now. "
+            "It's best to check with your department head.",
+            OFFICIAL_SOURCE
+        )
+
+    prog_row = None
+    if ents.get("program"):
+        res = fuzzy_best_program(programs, ents["program"], score_cutoff=60)
+        if res: _, _, prog_row = res
+
+    relevant_entries = []
+    if prog_row:
+        pid = prog_row["program_id"]
+        relevant_entries = [e for e in entries if e["program_id"] == pid]
+        
+        if not relevant_entries:
+            return (
+                f"I checked the curriculum for **{prog_row['program_name']}**, and I don't see **{cname}** listed there. "
+                "It might belong to a different program.",
+                OFFICIAL_SOURCE
+            )
+    else:
+        unique_progs = set(e["program_id"] for e in entries)
+        if len(unique_progs) == 1:
+            pid = list(unique_progs)[0]
+            relevant_entries = entries
+            prog_row = next((p for p in programs if p["program_id"] == pid), None)
+        else:
+            prog_names = []
+            for upid in unique_progs:
+                p = next((p for p in programs if p["program_id"] == upid), None)
+                if p: prog_names.append(p.get("short_name") or p.get("program_name"))
+            
+            prog_list_str = "\n".join([f"• {pn}" for pn in sorted(prog_names)])
+            return (
+                f"**{cname}** appears in multiple programs:\n{prog_list_str}\n\n"
+                "Could you tell me which program you are taking? (e.g., 'When do I take Ethics in CS?')",
+                None
+            )
+
+    entry = relevant_entries[0]
+    year = int(entry.get("year_level", 0))
+    term = int(entry.get("semester", 0))
+    
+    y_str = _friendly_year(year)
+    t_str = _friendly_term(term)
+    p_name = prog_row["program_name"] if prog_row else "your program"
+
+    return (
+        f"In **{p_name}**, **{cname}** is normally taken in **{y_str}**, **{t_str}**.\n\n"
+        "This is based on the approved curriculum from the Registrar’s Office.",
+        OFFICIAL_SOURCE
+    )
 def _looks_like_greeting(text: str) -> bool:
     t = (text or "").strip().lower()
     t = re.sub(r"[!.\s]+$", "", t)
@@ -1055,6 +1146,9 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
     ents = extract_entities(user_text)
     intent = detect_intent(user_text)
 
+    if intent == "max_units":
+        return handle_max_units(user_text, ents)
+
     has_units = bool(re.search(r"\bunits?\b", user_text.lower())) or \
                 bool(re.search(r"\bunits?\b", tlow)) or \
                 (intent == "units") or \
@@ -1068,6 +1162,7 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
     if c and match_type in ("code", "exact_title", "exact_title_subset", "alias"):
         if has_units: return handle_units(user_text, ents, course_obj=c)
         if has_prereq: return handle_prereq(user_text, ents, course_obj=c)
+        if intent == "when_taken": return handle_when_taken(user_text, ents, course_obj=c)
         return (
             f"I found **{format_course(c)}**.\n\n"
             "What do you need? I can check its **units**, **prerequisites**, "
@@ -1090,6 +1185,9 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
 
     if _is_generic_thesis_query(user_text) or _is_generic_nstp_query(user_text) or _is_generic_pathfit_query(user_text):
         return handle_prereq(user_text, ents)
+    if intent == "when_taken":
+        return handle_when_taken(user_text, ents, course_obj=c)
+
 
     strong_intent = intent in {"units", "prerequisites", "curriculum", "max_units"}
     
@@ -1186,7 +1284,8 @@ def route(user_text: str) -> Tuple[str, Optional[str]]:
                 diff = hits[0][1] - hits[1][1]
                 if diff >= 15:
                     is_clear_winner = True
-            
+            if c and (match_type in ("code", "exact_title", "exact_title_subset", "alias")) and intent == "when_taken":
+                return handle_when_taken(user_text, ents, course_obj=c)
             if is_clear_winner:
                 c = hits[0][2]
                 if has_units or intent == "units": return handle_units(user_text, ents, course_obj=c)

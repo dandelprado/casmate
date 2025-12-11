@@ -512,6 +512,53 @@ def run_tests():
             "expect_source": False,
             "desc": "Max Units - Unsupported BAEL (Static Response)"
         },
+
+        # ==============================================================================
+        # SECTION 10: WHEN TAKEN / YEAR LEVEL QUERIES
+        # ==============================================================================
+        {
+            "cat": "WhenTaken",
+            "input": "What year do I take Microbiology?",
+            "should_contain": ["In **Bachelor of Science in Biology**", "Microbiology", "normally taken in **Second year**"],
+            "expect_source": True,
+            "desc": "When taken - Unique course (Bio)"
+        },
+        {
+            "cat": "WhenTaken",
+            "input": "When do we take CC 111?",
+            "should_contain": ["Bachelor of Science in Computer Science", "First year", "First Trimester"],
+            "expect_source": True,
+            "desc": "When taken - Course Code (CS)"
+        },
+        {
+            "cat": "WhenTaken",
+            "input": "Is Experimental Psychology a 2nd year subject?",
+            "should_contain": ["Bachelor of Science in Psychology", "Second year", "First Trimester"],
+            "expect_source": True,
+            "desc": "When taken - Confirmation question"
+        },
+        {
+            "cat": "WhenTaken",
+            "input": "what year level is ethics?",
+            "should_contain": ["appears in multiple programs", "Could you tell me which program"],
+            "expect_source": None,
+            "desc": "When taken - Ambiguous course (Ethics)"
+        },
+        {
+            "cat": "WhenTaken",
+            "input": "When do I take Ethics in Political Science?",
+            "should_contain": ["Bachelor of Arts in Political Science", "Second year"],
+            "expect_source": True,
+            "desc": "When taken - Ambiguous resolved by entity"
+        },
+        {
+            "cat": "WhenTaken",
+            "input": "what year is microbiology in computer science?",
+            "should_contain": ["don't see", "Microbiology", "Computer Science"],
+            "expect_source": True,
+            "desc": "When taken - Course not in specified program"
+        },
+
     ]
 
     passed_count = 0

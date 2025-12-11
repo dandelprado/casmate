@@ -182,10 +182,23 @@ matcher.add(
     [
         [{"LOWER": {"IN": ["maximum", "max"]}}, {"LOWER": {"IN": ["units", "unit", "load"]}}],
         [{"LOWER": "highest"}, {"LOWER": "number"}, {"LOWER": "of"}, {"LOWER": "units"}],
+        [{"LOWER": "maximum"}, {"LOWER": "number"}, {"LOWER": "of"}, {"LOWER": "units"}],
         [{"LOWER": "overload"}],
         [{"LOWER": "overloading"}],
         [{"LOWER": "as"}, {"LOWER": "many"}, {"LOWER": "units"}, {"LOWER": "as"}],
     ],
+)
+
+matcher.add(
+    "INTENT_WHEN_TAKEN",
+    [
+        [{"LOWER": "what"}, {"LOWER": "year"}],
+        [{"LOWER": "which"}, {"LOWER": "year"}],
+        [{"LOWER": "when"}, {"LOWER": "do"}, {"LOWER": {"IN": ["i", "we", "students"]}}, {"LOWER": "take"}],
+        [{"LOWER": "when"}, {"LOWER": "is"}, {"OP": "*"}, {"LOWER": "taken"}],
+        [{"LOWER": "is"}, {"OP": "+"}, {"LOWER": {"IN": ["1st", "2nd", "3rd", "4th", "first", "second", "third", "fourth"]}}, {"LOWER": {"IN": ["year", "yr"]}}],
+        [{"LOWER": "what"}, {"LOWER": "level"}, {"LOWER": "is"}],
+    ]
 )
 
 matcher.add(
@@ -255,11 +268,14 @@ def detect_intent(text: str) -> str:
     ):
         return "dept_head_one"
 
+    if "INTENT_MAX_UNITS" in labels or any(x in tlow for x in ["maximum", "max units", "overload", "highest number of units"]):
+        return "max_units"
+
     if "INTENT_PREREQ" in labels or "prereq" in tlow or "prerequisite" in tlow:
         return "prerequisites"
 
-    if "INTENT_MAX_UNITS" in labels or any(x in tlow for x in ["maximum", "max units", "overload", "highest number of units"]):
-        return "max_units"
+    if "INTENT_WHEN_TAKEN" in labels:
+        return "when_taken"
 
     if "INTENT_UNITS" in labels or re.search(r"\bunits?\b", tlow):
         return "units"
@@ -290,6 +306,7 @@ def detect_intent(text: str) -> str:
              return "curriculum"
 
     return "courseinfo"
+
 def _extract_year(text: str) -> Optional[int]:
     tl = (text or "").lower()
     

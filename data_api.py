@@ -123,6 +123,19 @@ def _clean_course_query(text: str) -> str:
     kept = [t for t in tokens if t not in remove and not t.startswith("prereq") and not t.startswith("requirement")]
     return " ".join(kept) if kept else base
 
+def get_course_curriculum_entries(plan: List[Dict], course_id: str) -> List[Dict]:
+    if not course_id:
+        return []
+    
+    matches = []
+    cid_target = str(course_id).strip().upper()
+    
+    for entry in plan:
+        e_cid = str(entry.get("course_id") or "").strip().upper()
+        if e_cid == cid_target:
+            matches.append(entry)
+            
+    return matches
 
 def _clean_program_query(text: str) -> str:
     base = _normalize_phrase(text)
